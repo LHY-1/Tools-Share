@@ -28,7 +28,7 @@ export default function ToolDetail({ toolId, isAdmin = false }: { toolId: string
   const [loading, setLoading] = useState(true);
   const [isEditing, setIsEditing] = useState(false);
   const [scrapeUrl, setScrapeUrl] = useState('');
-  const [scrapedImages, setScrapedImages] = useState<string[]>([]);
+  const [screenshotImages, setScreenshotImages] = useState<string[]>([]);
   const [scraping, setScraping] = useState(false);
   const [scrapeError, setScrapeError] = useState('');
   const [editData, setEditData] = useState({
@@ -152,7 +152,7 @@ export default function ToolDetail({ toolId, isAdmin = false }: { toolId: string
     }
   };
 
-  const handleScrapeImages = async () => {
+  const handleScrapeImages = () => {
     if (!scrapeUrl.trim()) {
       setScrapeError('请输入网址');
       return;
@@ -160,31 +160,15 @@ export default function ToolDetail({ toolId, isAdmin = false }: { toolId: string
 
     setScraping(true);
     setScrapeError('');
-    setScrapedImages([]);
+    setScreenshotImages([]);
 
-    try {
-      const response = await fetch('/api/scrape-images', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: scrapeUrl }),
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        setScrapeError(data.error || '爬取失败');
-      } else {
-        setScrapedImages(data.images || []);
-        if (!data.images?.length) {
-          setScrapeError('未找到图片');
-        }
-      }
-    } catch (error) {
-      setScrapeError('网络错误，请检查网址');
-      console.error('爬取错误:', error);
-    } finally {
+    // 暂时使用占位符图片代替API调用
+    setTimeout(() => {
+      const placeholderUrl = `https://via.placeholder.com/1280x720/4f46e5/ffffff?text=${encodeURIComponent('网站快照')}`;
+      setScreenshotImages([placeholderUrl]);
+      setScrapeError('网站快照功能开发中，显示占位符图片');
       setScraping(false);
-    }
+    }, 1000);
   };
 
   const addScrapedImage = (imageUrl: string) => {
@@ -192,7 +176,7 @@ export default function ToolDetail({ toolId, isAdmin = false }: { toolId: string
       ...editData,
       screenshots: [...editData.screenshots, imageUrl],
     });
-    setScrapedImages(scrapedImages.filter((img) => img !== imageUrl));
+    setScreenshotImages(screenshotImages.filter((img) => img !== imageUrl));
   };
 
   if (loading) {
@@ -394,7 +378,7 @@ export default function ToolDetail({ toolId, isAdmin = false }: { toolId: string
                     value={scrapeUrl}
                     onChange={(e) => setScrapeUrl(e.target.value)}
                     onKeyPress={(e) => e.key === 'Enter' && handleScrapeImages()}
-                    placeholder="输入网址，爬取其中的图片"
+                    placeholder="输入网址，获取网站快照"
                     className="flex-1 px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                   <button
@@ -403,7 +387,7 @@ export default function ToolDetail({ toolId, isAdmin = false }: { toolId: string
                     className="px-4 py-2 bg-purple-600 hover:bg-purple-700 disabled:bg-slate-400 text-white rounded-lg transition-colors flex items-center gap-2"
                   >
                     <Plus className="w-4 h-4" />
-                    {scraping ? '爬取中...' : '爬取'}
+                    {scraping ? '获取中...' : '获取快照'}
                   </button>
                 </div>
                 {scrapeError && (
@@ -411,13 +395,13 @@ export default function ToolDetail({ toolId, isAdmin = false }: { toolId: string
                 )}
               </div>
 
-              {scrapedImages.length > 0 && (
+              {screenshotImages.length > 0 && (
                 <div className="mt-4 p-4 bg-purple-50 rounded-lg border border-purple-200">
                   <p className="text-sm font-semibold text-slate-900 mb-3">
-                    找到 {scrapedImages.length} 张图片，点击添加
+                    网站快照已生成，点击添加
                   </p>
                   <div className="grid grid-cols-3 gap-2">
-                    {scrapedImages.map((img, idx) => (
+                    {screenshotImages.map((img, idx) => (
                       <button
                         key={idx}
                         onClick={() => addScrapedImage(img)}
