@@ -1,10 +1,11 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect } from 'react';
 import { Tool, CreateToolInput } from '@/app/types';
 import { Trash2, Edit2, Plus, Eye, EyeOff, GripVertical } from './Icons';
 import Link from 'next/link';
 import Image from 'next/image';
+import { loadTools, saveTools } from '@/app/lib/db';
 
 const DEFAULT_CATEGORIES = ['开发工具', '设计工具', '工作效率', '文档管理', '其他工具'];
 
@@ -19,6 +20,10 @@ interface StoredTool {
   downloadLinks?: string[];
   downloadLinkLabels?: string[];
   screenshotLink?: string;
+  fullDescription?: string;
+  features?: string[];
+  screenshots?: string[];
+  usage?: string;
   createdAt: string;
   updatedAt: string;
   order?: number;
@@ -47,50 +52,75 @@ export default function AdminPage() {
   });
   const [draggedId, setDraggedId] = useState<string | null>(null);
 
-  const { tools: initialTools, categories: initialCategories } = useMemo(() => {
-    if (typeof window === 'undefined') {
-      return { tools: [], categories: DEFAULT_CATEGORIES };
-    }
-    
-    const saved = localStorage.getItem('tools');
-    const savedCategories = localStorage.getItem('categories');
-    
-    let tools: Tool[] = [];
-    let cats = DEFAULT_CATEGORIES;
-    
-    if (saved) {
+  const [tools, setTools] = useState<Tool[]>([]);
+  const [categories, setCategories] = useState<string[]>(DEFAULT_CATEGORIES);
+  const [isLoading, setIsLoading] = useState(true);
+
+  // 初始化加载 - 从 IndexedDB 或 localStorage
+  useEffect(() => {
+    async function initLoad() {
       try {
-        const parsed: StoredTool[] = JSON.parse(saved);
-        tools = parsed.map((tool) => ({
+        // 优先从 IndexedDB 加载
+        let loadedTools: StoredTool[] = [];
+        try {
+          loadedTools = await loadTools<StoredTool>();
+        } catch (e) {
+          console.warn('IndexedDB 加载失败:', e);
+        }
+        
+        // 如果 IndexedDB 为空，尝试从 localStorage
+        if (loadedTools.length === 0) {
+          const saved = localStorage.getItem('tools');
+          if (saved) {
+            loadedTools = JSON.parse(saved);
+            // 迁移到 IndexedDB
+            await saveTools(loadedTools);
+          }
+        }
+        
+        const tools = loadedTools.map((tool) => ({
           ...tool,
           createdAt: new Date(tool.createdAt),
           updatedAt: new Date(tool.updatedAt),
           categories: tool.categories || (tool.category ? [tool.category] : [DEFAULT_CATEGORIES[0]]),
           downloadLinks: tool.downloadLinks || (tool.downloadLink ? [tool.downloadLink] : []),
           screenshotLink: tool.screenshotLink || '',
+          fullDescription: tool.fullDescription || '',
+          features: tool.features || [],
+          screenshots: tool.screenshots || [],
+          usage: tool.usage || '',
         }));
+        
+        setTools(tools);
+        
+        // 加载分类
+        const savedCategories = localStorage.getItem('categories');
+        if (savedCategories) {
+          try {
+            setCategories(JSON.parse(savedCategories));
+          } catch (e) {
+            console.error('加载分类失败:', e);
+          }
+        }
       } catch (error) {
-        console.error('Error loading tools:', error);
+        console.error('初始化加载失败:', error);
       }
+      setIsLoading(false);
     }
     
-    if (savedCategories) {
-      try {
-        cats = JSON.parse(savedCategories);
-      } catch (error) {
-        console.error('Error loading categories:', error);
-      }
-    }
-    
-    return { tools, categories: cats };
+    initLoad();
   }, []);
 
-  const [tools, setTools] = useState<Tool[]>(initialTools);
-  const [categories, setCategories] = useState<string[]>(initialCategories);
-
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('tools', JSON.stringify(tools));
+    if (typeof window !== 'undefined' && tools.length > 0) {
+      // 保存到 IndexedDB（配额更大）
+      saveTools(tools as unknown as StoredTool[]).catch(console.error);
+      // 同步到 localStorage（保持兼容性，但允许失败）
+      try {
+        localStorage.setItem('tools', JSON.stringify(tools));
+      } catch (e) {
+        console.warn('localStorage 已满，数据已保存到 IndexedDB');
+      }
     }
   }, [tools]);
 
@@ -114,10 +144,17 @@ export default function AdminPage() {
     };
 
     if (editingId) {
+      // 保留原有的详细数据（fullDescription, features, screenshots, usage）
+      const existingTool = tools.find((t) => t.id === editingId);
       setTools(
         tools.map((t) =>
           t.id === editingId
-            ? { ...t, ...normalizedData, updatedAt: new Date() }
+            ? { ...t, ...normalizedData, 
+                fullDescription: existingTool?.fullDescription || '',
+                features: existingTool?.features || [],
+                screenshots: existingTool?.screenshots || [],
+                usage: existingTool?.usage || '',
+                updatedAt: new Date() }
             : t
         )
       );
@@ -149,9 +186,9 @@ export default function AdminPage() {
     setFormData({
       name: tool.name,
       description: tool.description,
-      categories: tool.categories || (tool.category ? [tool.category] : [DEFAULT_CATEGORIES[0]]),
+      categories: tool.categories,
       imageUrl: tool.imageUrl,
-      downloadLinks: tool.downloadLinks || (tool.downloadLink ? [tool.downloadLink] : []),
+      downloadLinks: tool.downloadLinks,
       downloadLinkLabels: tool.downloadLinkLabels || [],
       screenshotLink: tool.screenshotLink || '',
     });

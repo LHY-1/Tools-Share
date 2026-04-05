@@ -8,6 +8,7 @@ import { Download, ChevronLeft, Edit2, Plus, Trash2 } from './Icons';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeRaw from 'rehype-raw';
+import { loadTools, saveTools, migrateFromLocalStorage } from '@/app/lib/db';
 
 interface StoredTool {
   id: string;
@@ -39,6 +40,8 @@ export default function ToolDetail({ toolId, isAdmin = false }: { toolId: string
   const [screenshotLoading, setScreenshotLoading] = useState(false);
   const [screenshotError, setScreenshotError] = useState<string | null>(null);
   const [showVersionDropdown, setShowVersionDropdown] = useState(false);
+  const [lightboxOpen, setLightboxOpen] = useState(false);
+  const [lightboxImage, setLightboxImage] = useState('');
   const dropdownTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const [editData, setEditData] = useState({
     fullDescription: '',
@@ -57,15 +60,34 @@ export default function ToolDetail({ toolId, isAdmin = false }: { toolId: string
   });
 
   useEffect(() => {
-    const saved = localStorage.getItem('tools');
-    
-    if (saved) {
+    async function loadTool() {
       try {
-        const tools: StoredTool[] = JSON.parse(saved);
+        let tools: StoredTool[] = [];
+        
+        // 优先从 IndexedDB 加载
+        try {
+          tools = await loadTools<StoredTool>();
+        } catch (e) {
+          console.warn('IndexedDB 加载失败，尝试从 localStorage 迁移:', e);
+        }
+        
+        // 如果 IndexedDB 为空，尝试从 localStorage 迁移
+        if (tools.length === 0) {
+          const saved = localStorage.getItem('tools');
+          if (saved) {
+            tools = JSON.parse(saved);
+            // 迁移到 IndexedDB
+            await saveTools(tools);
+            console.log(`从 localStorage 迁移了 ${tools.length} 个工具到 IndexedDB`);
+          }
+        }
+        
         const found = tools.find((t) => t.id === toolId);
         if (found) {
-          const toolData = {
+          const toolData: Tool = {
             ...found,
+            categories: found.categories || (found.category ? [found.category] : []),
+            downloadLinks: found.downloadLinks || (found.downloadLink ? [found.downloadLink] : []),
             createdAt: new Date(found.createdAt),
             updatedAt: new Date(found.updatedAt),
           };
@@ -75,8 +97,8 @@ export default function ToolDetail({ toolId, isAdmin = false }: { toolId: string
             features: toolData.features || [],
             screenshots: toolData.screenshots || [],
             usage: toolData.usage || '',
-            categories: toolData.categories || (toolData.category ? [toolData.category] : []),
-            downloadLinks: toolData.downloadLinks || (toolData.downloadLink ? [toolData.downloadLink] : []),
+            categories: toolData.categories,
+            downloadLinks: toolData.downloadLinks,
             downloadLinkLabels: toolData.downloadLinkLabels || [],
             screenshotLink: toolData.screenshotLink || '',
             newFeature: '',
@@ -89,8 +111,10 @@ export default function ToolDetail({ toolId, isAdmin = false }: { toolId: string
       } catch (error) {
         console.error('Error loading tool:', error);
       }
+      setLoading(false);
     }
-    setLoading(false);
+    
+    loadTool();
   }, [toolId]);
 
   const blobToDataUrl = (blob: Blob): Promise<string> =>
@@ -100,6 +124,35 @@ export default function ToolDetail({ toolId, isAdmin = false }: { toolId: string
       reader.onerror = reject;
       reader.readAsDataURL(blob);
     });
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const snapshotFileInputRef = useRef<HTMLInputElement>(null);
+
+  // 处理本地上传快照图片
+  const handleSnapshotUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const base64String = event.target?.result as string;
+        setEditData({ ...editData, screenshotLink: base64String });
+      };
+      reader.readAsDataURL(file);
+    }
+    // 重置 input，允许重复选择同一文件
+    e.target.value = '';
+  };
+
+  const handleInsertScreenshotToIntro = () => {
+    if (!screenshotPreview) return;
+
+    setEditData((prev) => ({
+      ...prev,
+      screenshots: [...prev.screenshots, screenshotPreview],
+    }));
+    setScreenshotPreview(null);
+    setScreenshotUrl('');
+  };
 
   const handleGenerateScreenshot = async () => {
     if (!screenshotUrl.trim()) {
@@ -119,7 +172,6 @@ export default function ToolDetail({ toolId, isAdmin = false }: { toolId: string
         },
         body: JSON.stringify({
           url: screenshotUrl,
-          fullPage: true,
         }),
       });
 
@@ -149,54 +201,62 @@ export default function ToolDetail({ toolId, isAdmin = false }: { toolId: string
     }
   };
 
-  const handleInsertScreenshotToIntro = () => {
-    if (!screenshotPreview) return;
-
-    setEditData((prev) => ({
-      ...prev,
-      screenshots: [...prev.screenshots, screenshotPreview],
-    }));
-    setScreenshotPreview(null);
-    setScreenshotUrl('');
-  };
-
-  const handleSaveEdit = () => {
-    const saved = localStorage.getItem('tools');
-    if (saved && tool) {
+  const handleSaveEdit = async () => {
+    try {
+      let tools: StoredTool[] = [];
+      
+      // 从 IndexedDB 加载所有工具
       try {
-        const tools = JSON.parse(saved);
-        const index = tools.findIndex((t: StoredTool) => t.id === toolId);
-        if (index !== -1) {
-          tools[index] = {
-            ...tools[index],
-            fullDescription: editData.fullDescription,
-            features: editData.features,
-            screenshots: editData.screenshots,
-            usage: editData.usage,
-            categories: editData.categories,
-            downloadLinks: editData.downloadLinks,
-            downloadLinkLabels: editData.downloadLinkLabels,
-            screenshotLink: editData.screenshotLink,
-            updatedAt: new Date().toISOString(),
-          };
-          localStorage.setItem('tools', JSON.stringify(tools));
-          setTool({
-            ...tool,
-            fullDescription: editData.fullDescription,
-            features: editData.features,
-            screenshots: editData.screenshots,
-            usage: editData.usage,
-            categories: editData.categories,
-            downloadLinks: editData.downloadLinks,
-            downloadLinkLabels: editData.downloadLinkLabels,
-            screenshotLink: editData.screenshotLink,
-            updatedAt: new Date(),
-          });
-          setIsEditing(false);
+        tools = await loadTools<StoredTool>();
+      } catch (e) {
+        // IndexedDB 加载失败，尝试从 localStorage
+        const saved = localStorage.getItem('tools');
+        if (saved) {
+          tools = JSON.parse(saved);
         }
-      } catch (error) {
-        console.error('Error saving tool:', error);
       }
+      
+      const index = tools.findIndex((t) => t.id === toolId);
+      if (index !== -1) {
+        tools[index] = {
+          ...tools[index],
+          fullDescription: editData.fullDescription,
+          features: editData.features,
+          screenshots: editData.screenshots,
+          usage: editData.usage,
+          categories: editData.categories,
+          downloadLinks: editData.downloadLinks,
+          downloadLinkLabels: editData.downloadLinkLabels,
+          screenshotLink: editData.screenshotLink,
+          updatedAt: new Date().toISOString(),
+        };
+        
+        // 保存到 IndexedDB（配额更大）
+        await saveTools(tools);
+        
+        // 同步到 localStorage（保持兼容性，但允许失败）
+        try {
+          localStorage.setItem('tools', JSON.stringify(tools));
+        } catch (e) {
+          console.warn('localStorage 已满，数据已保存到 IndexedDB');
+        }
+        
+        setTool({
+          ...tool,
+          fullDescription: editData.fullDescription,
+          features: editData.features,
+          screenshots: editData.screenshots,
+          usage: editData.usage,
+          categories: editData.categories,
+          downloadLinks: editData.downloadLinks,
+          downloadLinkLabels: editData.downloadLinkLabels,
+          screenshotLink: editData.screenshotLink,
+          updatedAt: new Date(),
+        });
+        setIsEditing(false);
+      }
+    } catch (error) {
+      console.error('Error saving tool:', error);
     }
   };
 
@@ -558,19 +618,40 @@ export default function ToolDetail({ toolId, isAdmin = false }: { toolId: string
 
               <div className="mb-6">
                 <label className="block text-sm font-medium text-slate-700 mb-2">快照链接（大图展示）</label>
-                <input
-                  type="url"
-                  value={editData.screenshotLink}
-                  onChange={(e) => setEditData({ ...editData, screenshotLink: e.target.value })}
-                  className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                  placeholder="https://example.com/screenshot.png"
-                />
+                <div className="flex gap-2 mb-2">
+                  <input
+                    type="url"
+                    value={editData.screenshotLink?.startsWith('data:') ? '' : editData.screenshotLink}
+                    onChange={(e) => setEditData({ ...editData, screenshotLink: e.target.value })}
+                    className="flex-1 px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    placeholder="https://example.com/screenshot.png"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => snapshotFileInputRef.current?.click()}
+                    className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors font-medium"
+                  >
+                    本地上传
+                  </button>
+                  <input
+                    ref={snapshotFileInputRef}
+                    type="file"
+                    accept="image/*"
+                    onChange={handleSnapshotUpload}
+                    className="hidden"
+                  />
+                </div>
                 <p className="text-xs text-slate-500 mt-1">填写后会在页面顶部显示大图快照</p>
+                {editData.screenshotLink && (
+                  <div className="mt-2 rounded-lg overflow-hidden border border-slate-200">
+                    <img src={editData.screenshotLink} alt="快照预览" className="w-full h-32 object-cover" />
+                  </div>
+                )}
               </div>
 
               <div className="bg-slate-50 rounded-xl border border-slate-200 p-4 mb-6">
                 <p className="text-sm font-semibold text-slate-900 mb-3">生成网页快照</p>
-                <p className="text-xs text-slate-500 mb-3">生成 PNG 快照后，点击添加按钮将其加入截图库。</p>
+                <p className="text-xs text-slate-500 mb-3">输入网页地址，生成PNG截图后可以添加到截图库中。</p>
                 <div className="space-y-4">
                   <div>
                     <label className="block text-sm font-medium text-slate-700 mb-1">网页地址</label>
@@ -597,7 +678,7 @@ export default function ToolDetail({ toolId, isAdmin = false }: { toolId: string
                       disabled={!screenshotPreview}
                       className="flex-1 px-4 py-2 bg-slate-200 hover:bg-slate-300 disabled:cursor-not-allowed disabled:opacity-50 text-slate-800 rounded-lg transition-colors font-medium"
                     >
-                      添加截图
+                      添加到截图库
                     </button>
                     <button
                       type="button"
@@ -615,7 +696,9 @@ export default function ToolDetail({ toolId, isAdmin = false }: { toolId: string
                     </button>
                   </div>
                   {screenshotError && (
-                    <p className="text-sm text-red-600">{screenshotError}</p>
+                    <div className="text-red-600 text-sm bg-red-50 p-3 rounded-lg border border-red-200">
+                      {screenshotError}
+                    </div>
                   )}
                   {screenshotPreview && (
                     <div className="rounded-lg overflow-hidden border border-slate-200">
@@ -811,13 +894,17 @@ export default function ToolDetail({ toolId, isAdmin = false }: { toolId: string
                   </div>
                 )}
 
-                {/* 快照 - 大图，保持纵横比，无标题 */}
+                {/* 快照 - 大图，点击可放大 */}
                 {tool.screenshotLink && (
                   <div className="mb-8 rounded-lg overflow-hidden border border-slate-200 shadow-sm">
                     <img
                       src={tool.screenshotLink}
                       alt="网页快照"
-                      className="w-full h-auto"
+                      className="w-full h-auto cursor-zoom-in"
+                      onClick={() => {
+                        setLightboxImage(tool.screenshotLink!);
+                        setLightboxOpen(true);
+                      }}
                       onError={(e) => {
                         e.currentTarget.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="100" height="100"%3E%3Crect fill="%23e2e8f0" width="100" height="100"/%3E%3C/svg%3E';
                       }}
@@ -825,7 +912,7 @@ export default function ToolDetail({ toolId, isAdmin = false }: { toolId: string
                   </div>
                 )}
 
-                {/* 截图 - 保持纵横比 */}
+                {/* 截图 - 点击可放大 */}
                 {tool.screenshots && tool.screenshots.length > 0 && (
                   <div className="mb-8">
                     <h2 className="text-2xl font-bold text-slate-900 mb-4">截图</h2>
@@ -838,7 +925,11 @@ export default function ToolDetail({ toolId, isAdmin = false }: { toolId: string
                           <img
                             src={screenshot}
                             alt={`截图 ${idx + 1}`}
-                            className="w-full h-auto"
+                            className="w-full h-auto cursor-zoom-in"
+                            onClick={() => {
+                              setLightboxImage(screenshot);
+                              setLightboxOpen(true);
+                            }}
                             onError={(e) => {
                               e.currentTarget.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="100" height="100"%3E%3Crect fill="%23e2e8f0" width="100" height="100"/%3E%3C/svg%3E';
                             }}
@@ -858,6 +949,27 @@ export default function ToolDetail({ toolId, isAdmin = false }: { toolId: string
           </div>
         )}
       </main>
+
+      {/* Lightbox 模态框 */}
+      {lightboxOpen && (
+        <div
+          className="fixed inset-0 bg-black/90 z-50 flex items-center justify-center p-4 cursor-zoom-out"
+          onClick={() => setLightboxOpen(false)}
+        >
+          <img
+            src={lightboxImage}
+            alt="放大查看"
+            className="max-w-full max-h-full object-contain"
+            onClick={(e) => e.stopPropagation()}
+          />
+          <button
+            className="absolute top-4 right-4 text-white text-3xl hover:text-gray-300"
+            onClick={() => setLightboxOpen(false)}
+          >
+            ×
+          </button>
+        </div>
+      )}
     </div>
   );
 }
