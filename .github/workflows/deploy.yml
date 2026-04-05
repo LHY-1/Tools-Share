@@ -1,4 +1,4 @@
-name: Deploy to GitHub Pages
+name: Build Check
 
 on:
   push:
@@ -7,7 +7,7 @@ on:
     branches: [ master ]
 
 jobs:
-  build-and-deploy:
+  build:
     runs-on: ubuntu-latest
 
     steps:
@@ -23,12 +23,5 @@ jobs:
     - name: Install dependencies
       run: npm ci
 
-    - name: Build
+    - name: Build check
       run: npm run build
-
-    - name: Deploy to GitHub Pages
-      uses: peaceiris/actions-gh-pages@v3
-      if: github.ref == 'refs/heads/master'
-      with:
-        github_token: ${{ secrets.GITHUB_TOKEN }}
-        publish_dir: ./out
