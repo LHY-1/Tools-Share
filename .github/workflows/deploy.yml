@@ -1,4 +1,4 @@
-name: Build Check
+name: Deploy to Vercel
 
 on:
   push:
@@ -7,7 +7,7 @@ on:
     branches: [ master ]
 
 jobs:
-  build:
+  build-and-deploy:
     runs-on: ubuntu-latest
 
     steps:
@@ -25,3 +25,12 @@ jobs:
 
     - name: Build check
       run: npm run build
+
+    - name: Deploy to Vercel
+      if: github.ref == 'refs/heads/master' && github.event_name == 'push'
+      uses: amondnet/vercel-action@v25
+      with:
+        vercel-token: ${{ secrets.VERCEL_TOKEN }}
+        vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
+        vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
+        vercel-args: '--prod'
