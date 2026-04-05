@@ -142,6 +142,62 @@ export default function AdminPage() {
     }
   }, [categories]);
 
+  const [cloudLoading, setCloudLoading] = useState(false);
+  const [cloudStatus, setCloudStatus] = useState<string>('');
+
+  const handleSyncToCloud = async () => {
+    setCloudLoading(true);
+    setCloudStatus('');
+    try {
+      const storedTools = await loadTools<StoredTool>();
+      const data = JSON.stringify(storedTools);
+      const res = await fetch('/api/cloud/save', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key: 'tools-data', value: data }),
+      });
+      const result = await res.json();
+      if (!res.ok) throw new Error(result.error || '保存失败');
+      setCloudStatus(`✓ 已同步 ${storedTools.length} 个工具到云端`);
+    } catch (err: any) {
+      setCloudStatus(`✗ 同步失败: ${err.message}`);
+    } finally {
+      setCloudLoading(false);
+    }
+  };
+
+  const handleRestoreFromCloud = async () => {
+    if (!confirm('从云端恢复会覆盖本地数据，确定继续？')) return;
+    setCloudLoading(true);
+    setCloudStatus('');
+    try {
+      const res = await fetch('/api/cloud/load?key=tools-data');
+      const result = await res.json();
+      if (!res.ok) throw new Error(result.error || '加载失败');
+      if (!result.result) throw new Error('云端暂无数据');
+      const storedTools: StoredTool[] = JSON.parse(result.result);
+      await saveTools(storedTools);
+      const mapped = storedTools.map((tool) => ({
+        ...tool,
+        createdAt: new Date(tool.createdAt),
+        updatedAt: new Date(tool.updatedAt),
+        categories: tool.categories || (tool.category ? [tool.category] : [DEFAULT_CATEGORIES[0]]),
+        downloadLinks: tool.downloadLinks || (tool.downloadLink ? [tool.downloadLink] : []),
+        screenshotLink: tool.screenshotLink || '',
+        fullDescription: tool.fullDescription || '',
+        features: tool.features || [],
+        screenshots: tool.screenshots || [],
+        usage: tool.usage || '',
+      }));
+      setTools(mapped.map((t) => toTool(t)));
+      setCloudStatus(`✓ 已从云端恢复 ${storedTools.length} 个工具`);
+    } catch (err: any) {
+      setCloudStatus(`✗ 恢复失败: ${err.message}`);
+    } finally {
+      setCloudLoading(false);
+    }
+  };
+
   // ─── 导出 ───────────────────────────────────────────────────────────────────
   const handleExport = async () => {
     try {
@@ -462,7 +518,29 @@ export default function AdminPage() {
                   className="hidden"
                   onChange={handleFileChange}
                 />
+                <div className="h-6 w-px bg-slate-300 mx-1" />
+                <button
+                  onClick={handleSyncToCloud}
+                  disabled={cloudLoading}
+                  className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white rounded-lg transition-colors font-medium text-sm"
+                >
+                  <Upload className="w-4 h-4" />
+                  {cloudLoading ? '同步中...' : '同步到云端'}
+                </button>
+                <button
+                  onClick={handleRestoreFromCloud}
+                  disabled={cloudLoading}
+                  className="inline-flex items-center gap-2 px-4 py-2 bg-amber-600 hover:bg-amber-700 disabled:bg-amber-300 text-white rounded-lg transition-colors font-medium text-sm"
+                >
+                  <Download className="w-4 h-4" />
+                  {cloudLoading ? '恢复中...' : '从云端恢复'}
+                </button>
               </div>
+              {cloudStatus && (
+                <div className={`text-sm font-medium ${cloudStatus.startsWith('✓') ? 'text-green-600' : 'text-red-500'}`}>
+                  {cloudStatus}
+                </div>
+              )}
               <Link href="/" className="inline-flex items-center gap-2 px-4 py-2 bg-slate-700 hover:bg-slate-800 text-white rounded-lg transition-colors font-medium">
                 返回首页
               </Link>
