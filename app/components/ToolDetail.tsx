@@ -152,7 +152,7 @@ export default function ToolDetail({ toolId, isAdmin = false }: { toolId: string
     }
   };
 
-  const handleScrapeImages = () => {
+  const handleScrapeImages = async () => {
     if (!scrapeUrl.trim()) {
       setScrapeError('请输入网址');
       return;
@@ -162,13 +162,31 @@ export default function ToolDetail({ toolId, isAdmin = false }: { toolId: string
     setScrapeError('');
     setScreenshotImages([]);
 
-    // 暂时使用占位符图片代替API调用
-    setTimeout(() => {
-      const placeholderUrl = `https://via.placeholder.com/1280x720/4f46e5/ffffff?text=${encodeURIComponent('网站快照')}`;
-      setScreenshotImages([placeholderUrl]);
-      setScrapeError('网站快照功能开发中，显示占位符图片');
+    try {
+      const response = await fetch('/api/screenshot', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ url: scrapeUrl }),
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        setScreenshotImages(data.images || []);
+        if (data.message) {
+          setScrapeError(data.message);
+        }
+      } else {
+        setScrapeError(data.error || '生成快照失败');
+      }
+    } catch (error) {
+      setScrapeError('网络错误，请检查网址');
+      console.error('Screenshot error:', error);
+    } finally {
       setScraping(false);
-    }, 1000);
+    }
   };
 
   const addScrapedImage = (imageUrl: string) => {

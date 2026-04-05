@@ -3,9 +3,9 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   devIndicators: false,
-  // turbopack: {
-  //   root: path.join(__dirname),
-  // },
+  experimental: {
+    turbo: false, // ÍêÈ«½ûÓÃTurbopack
+  },
 };
 
 export default nextConfig;
