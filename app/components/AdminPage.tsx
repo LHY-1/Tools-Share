@@ -7,7 +7,7 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { loadTools, saveTools } from '@/app/lib/db';
 import { exportAllData, importData, type ImportResult } from '@/app/lib/export-import';
-import { processExternalImages, resolveImageRefs } from '@/app/lib/image-utils';
+import { processExternalImages, resolveImageRefs, LocalImage } from '@/app/lib/image-utils';
 
 const DEFAULT_CATEGORIES = ['开发工具', '设计工具', '工作效率', '文档管理', '其他工具'];
 
@@ -642,8 +642,8 @@ export default function AdminPage() {
                       className="flex items-center gap-4 p-4 bg-slate-50 rounded-lg border border-slate-200 hover:border-slate-300 transition-colors group cursor-pointer"
                     >
                       <GripVertical className="w-4 h-4 text-slate-400 group-hover:text-slate-600" />
-                      <img
-                        src={tool.imageUrl || '/placeholder.png'}
+                      <LocalImage
+                        src={tool.imageUrl}
                         alt={tool.name}
                         className="w-12 h-12 rounded-lg object-cover"
                       />
