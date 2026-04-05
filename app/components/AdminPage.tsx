@@ -7,7 +7,7 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { loadTools, saveTools } from '@/app/lib/db';
 import { exportAllData, importData, type ImportResult } from '@/app/lib/export-import';
-import { processExternalImages, resolveImageRefs, LocalImage } from '@/app/lib/image-utils';
+import { processExternalImages, resolveImageRefs, fetchAndStoreExternalImage, isExternalUrl, LocalImage } from '@/app/lib/image-utils';
 
 const DEFAULT_CATEGORIES = ['开发工具', '设计工具', '工作效率', '文档管理', '其他工具'];
 
@@ -150,10 +150,62 @@ export default function AdminPage() {
     setCloudStatus('');
     try {
       const storedTools = await loadTools<StoredTool>();
-      // 同步前把所有 __local_image:<id> 引用反解成 data: URL，
-      // 这样云端存的就是完整图片数据，不依赖本地 IndexedDB
+      // 第一步：把 __local_image:<id> 引用反解成 data: URL
       const resolvedTools = await Promise.all(storedTools.map(resolveImageRefs));
-      const data = JSON.stringify(resolvedTools);
+
+      // 第二步：把外部图片 URL 也抓取转存成 data: URL
+      setCloudStatus('正在下载外部图片...');
+      const syncedTools: StoredTool[] = [];
+      for (const tool of resolvedTools) {
+        const clone = { ...tool };
+        const fieldsToCheck: (keyof StoredTool)[] = ['imageUrl', 'screenshotLink'];
+        if ((clone as any).screenshots) {
+          (clone as any).screenshots = [...((clone as any).screenshots as string[])];
+        }
+        for (const field of fieldsToCheck) {
+          const val = (clone as any)[field] as string | undefined;
+          if (val && isExternalUrl(val)) {
+            const result = await fetchAndStoreExternalImage(val);
+            if (result.imageId) {
+              const img = await (await import('@/app/lib/db')).loadImage(result.imageId);
+              if (img) {
+                const reader = new FileReader();
+                const dataUrl = await new Promise<string>((resolve, reject) => {
+                  reader.onload = () => resolve(reader.result as string);
+                  reader.onerror = reject;
+                  reader.readAsDataURL(img.blob);
+                });
+                (clone as any)[field] = dataUrl;
+              }
+            }
+          }
+        }
+        // screenshots 数组
+        const screenshots = (clone as any).screenshots as string[] | undefined;
+        if (screenshots) {
+          for (let i = 0; i < screenshots.length; i++) {
+            if (screenshots[i] && isExternalUrl(screenshots[i])) {
+              const result = await fetchAndStoreExternalImage(screenshots[i]);
+              if (result.imageId) {
+                const img = await (await import('@/app/lib/db')).loadImage(result.imageId);
+                if (img) {
+                  const reader = new FileReader();
+                  const dataUrl = await new Promise<string>((resolve, reject) => {
+                    reader.onload = () => resolve(reader.result as string);
+                    reader.onerror = reject;
+                    reader.readAsDataURL(img.blob);
+                  });
+                  screenshots[i] = dataUrl;
+                }
+              }
+            }
+          }
+        }
+        syncedTools.push(clone);
+      }
+
+      setCloudStatus('正在上传云端...');
+      const data = JSON.stringify(syncedTools);
       const res = await fetch('/api/cloud/save', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
