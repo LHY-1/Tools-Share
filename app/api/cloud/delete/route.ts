@@ -9,8 +9,8 @@ export async function DELETE(req: NextRequest) {
       return NextResponse.json({ error: 'key required' }, { status: 400 });
     }
 
-    const url = process.env.UPSTASH_REDIS_REST_URL!;
-    const token = process.env.UPSTASH_REDIS_REST_TOKEN!;
+    const url = process.env.KV_REST_API_URL!;
+    const token = process.env.KV_REST_API_TOKEN!;
 
     const res = await fetch(`${url}/del/${encodeURIComponent(key)}`, {
       method: 'DELETE',

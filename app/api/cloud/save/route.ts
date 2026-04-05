@@ -10,8 +10,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'key and value required' }, { status: 400 });
     }
 
-    const url = process.env.UPSTASH_REDIS_REST_URL!;
-    const token = process.env.UPSTASH_REDIS_REST_TOKEN!;
+    const url = process.env.KV_REST_API_URL!;
+    const token = process.env.KV_REST_API_TOKEN!;
 
     const res = await fetch(`${url}/set/${encodeURIComponent(key)}`, {
       method: 'POST',
