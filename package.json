@@ -10,8 +10,11 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@sparticuz/chromium": "^143.0.4",
+    "jszip": "^3.10.1",
     "next": "16.2.2",
     "playwright": "^1.59.1",
+    "playwright-core": "^1.59.1",
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "react-markdown": "^9.0.1",

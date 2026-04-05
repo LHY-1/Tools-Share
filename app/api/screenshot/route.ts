@@ -1,45 +1,29 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { captureScreenshot } from '@/app/lib/screenshot';
 
-// 动态导入 Playwright，避免 Turbopack 静态分析时崩溃
-async function getPlaywright() {
-  const { default: playwright } = await import('playwright');
-  return playwright;
-}
+export const runtime = 'nodejs';
 
 export async function POST(request: NextRequest) {
   try {
-    const { url, fullPage = true } = await request.json();
+    const body = await request.json();
+    const url = body?.url as string | undefined;
+    const fullPage = body?.fullPage !== false;
 
     if (!url) {
-      return NextResponse.json({ error: 'URL is required' }, { status: 400 });
+      return NextResponse.json({ error: 'url is required' }, { status: 400 });
     }
 
-    let browser = null;
-    try {
-      const playwright = await getPlaywright();
-      browser = await playwright.chromium.launch({ headless: true });
-      const page = await browser.newPage();
-      await page.setViewportSize({ width: 1280, height: 720 });
-      await page.goto(url, { waitUntil: 'networkidle', timeout: 30000 });
+    const buffer = await captureScreenshot({ url, fullPage });
 
-      const screenshotBuffer = await page.screenshot({ type: 'png', fullPage });
-
-      return new Response(new Uint8Array(screenshotBuffer), {
-        headers: {
-          'Content-Type': 'image/png',
-          'Cache-Control': 'public, max-age=3600',
-        },
-      });
-    } finally {
-      if (browser) {
-        await browser.close();
-      }
-    }
-  } catch (error) {
-    console.error('Screenshot error:', error);
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'Failed to generate screenshot' },
-      { status: 500 }
-    );
+    return new Response(new Uint8Array(buffer), {
+      headers: {
+        'Content-Type': 'image/png',
+        'Cache-Control': 'public, max-age=3600',
+      },
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error('[/api/screenshot]', message);
+    return NextResponse.json({ error: `Screenshot failed: ${message}` }, { status: 500 });
   }
 }

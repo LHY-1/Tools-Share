@@ -1,31 +1,32 @@
 export interface Tool {
   id: string;
   name: string;
-  description: string; // 简介
+  description: string;
   categories: string[];
   imageUrl: string;
   downloadLinks: string[];
-  downloadLinkLabels?: string[]; // 下载链接版本标签
+  downloadLinkLabels?: string[];
   screenshotLink?: string;
   createdAt: Date;
   updatedAt: Date;
   order?: number;
-  // 详情页扩展
-  fullDescription?: string; // 完整介绍
-  features?: string[]; // 功能列表
-  screenshots?: string[]; // 截图链接列表
-  usage?: string; // 使用说明
+  fullDescription?: string;
+  features?: string[];
+  screenshots?: string[];
+  usage?: string;
+  // 关联的本地图片 ID（用于导出/导入）
+  imageIds?: string[];
 }
 
 export interface StoredTool {
   id: string;
   name: string;
   description: string;
-  category?: string; // 旧格式：单个分类
-  categories?: string[]; // 新格式：分类数组
+  category?: string;
+  categories?: string[];
   imageUrl: string;
-  downloadLink?: string; // 旧格式：单个下载链接
-  downloadLinks?: string[]; // 新格式：下载链接数组
+  downloadLink?: string;
+  downloadLinks?: string[];
   downloadLinkLabels?: string[];
   screenshotLink?: string;
   createdAt: string | Date;
@@ -35,6 +36,7 @@ export interface StoredTool {
   features?: string[];
   screenshots?: string[];
   usage?: string;
+  imageIds?: string[];
 }
 
 export interface Category {
@@ -53,10 +55,7 @@ export interface CreateToolInput {
   screenshotLink?: string;
 }
 
-/**
- * 将存储层数据转换为组件 state 使用的 Tool 类型
- * 保证 createdAt / updatedAt 都是 Date 对象
- */
+/** 将存储层数据转换为组件 state 使用的 Tool 类型 */
 export function toTool(data: StoredTool): Tool {
   return {
     id: data.id,
@@ -80,5 +79,6 @@ export function toTool(data: StoredTool): Tool {
     features: data.features,
     screenshots: data.screenshots,
     usage: data.usage,
+    imageIds: data.imageIds,
   };
 }
