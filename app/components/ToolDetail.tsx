@@ -2,33 +2,13 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { Tool } from '@/app/types';
+import { Tool, StoredTool, toTool } from '@/app/types';
 import Link from 'next/link';
 import { Download, ChevronLeft, Edit2, Plus, Trash2 } from './Icons';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeRaw from 'rehype-raw';
 import { loadTools, saveTools, migrateFromLocalStorage } from '@/app/lib/db';
-
-interface StoredTool {
-  id: string;
-  name: string;
-  description: string;
-  category?: string;
-  categories?: string[];
-  imageUrl: string;
-  downloadLink?: string;
-  downloadLinks?: string[];
-  downloadLinkLabels?: string[];
-  createdAt: string;
-  updatedAt: string;
-  order?: number;
-  fullDescription?: string;
-  features?: string[];
-  screenshots?: string[];
-  usage?: string;
-  screenshotLink?: string;
-}
 
 export default function ToolDetail({ toolId, isAdmin = false }: { toolId: string; isAdmin?: boolean }) {
   const router = useRouter();
@@ -84,13 +64,7 @@ export default function ToolDetail({ toolId, isAdmin = false }: { toolId: string
         
         const found = tools.find((t) => t.id === toolId);
         if (found) {
-          const toolData: Tool = {
-            ...found,
-            categories: found.categories || (found.category ? [found.category] : []),
-            downloadLinks: found.downloadLinks || (found.downloadLink ? [found.downloadLink] : []),
-            createdAt: new Date(found.createdAt),
-            updatedAt: new Date(found.updatedAt),
-          };
+          const toolData = toTool(found);
           setTool(toolData);
           setEditData({
             fullDescription: toolData.fullDescription || '',
@@ -233,26 +207,29 @@ export default function ToolDetail({ toolId, isAdmin = false }: { toolId: string
         
         // 保存到 IndexedDB（配额更大）
         await saveTools(tools);
-        
+
         // 同步到 localStorage（保持兼容性，但允许失败）
         try {
           localStorage.setItem('tools', JSON.stringify(tools));
         } catch (e) {
           console.warn('localStorage 已满，数据已保存到 IndexedDB');
         }
-        
-        setTool({
-          ...tool,
-          fullDescription: editData.fullDescription,
-          features: editData.features,
-          screenshots: editData.screenshots,
-          usage: editData.usage,
-          categories: editData.categories,
-          downloadLinks: editData.downloadLinks,
-          downloadLinkLabels: editData.downloadLinkLabels,
-          screenshotLink: editData.screenshotLink,
-          updatedAt: new Date(),
-        });
+
+        if (!tool) return;
+        setTool(
+          toTool({
+            ...tool,
+            fullDescription: editData.fullDescription,
+            features: editData.features,
+            screenshots: editData.screenshots,
+            usage: editData.usage,
+            categories: editData.categories,
+            downloadLinks: editData.downloadLinks,
+            downloadLinkLabels: editData.downloadLinkLabels,
+            screenshotLink: editData.screenshotLink,
+            updatedAt: new Date(),
+          })
+        );
         setIsEditing(false);
       }
     } catch (error) {

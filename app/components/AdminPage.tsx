@@ -1,33 +1,13 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Tool, CreateToolInput } from '@/app/types';
+import { Tool, StoredTool, CreateToolInput, toTool } from '@/app/types';
 import { Trash2, Edit2, Plus, Eye, EyeOff, GripVertical } from './Icons';
 import Link from 'next/link';
 import Image from 'next/image';
 import { loadTools, saveTools } from '@/app/lib/db';
 
 const DEFAULT_CATEGORIES = ['开发工具', '设计工具', '工作效率', '文档管理', '其他工具'];
-
-interface StoredTool {
-  id: string;
-  name: string;
-  description: string;
-  category?: string;
-  categories?: string[];
-  imageUrl: string;
-  downloadLink?: string;
-  downloadLinks?: string[];
-  downloadLinkLabels?: string[];
-  screenshotLink?: string;
-  fullDescription?: string;
-  features?: string[];
-  screenshots?: string[];
-  usage?: string;
-  createdAt: string;
-  updatedAt: string;
-  order?: number;
-}
 
 export default function AdminPage() {
   const [showForm, setShowForm] = useState(false);
@@ -91,7 +71,7 @@ export default function AdminPage() {
           usage: tool.usage || '',
         }));
         
-        setTools(tools);
+        setTools(tools.map((t) => toTool(t)));
         
         // 加载分类
         const savedCategories = localStorage.getItem('categories');

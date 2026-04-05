@@ -52,3 +52,33 @@ export interface CreateToolInput {
   downloadLinkLabels?: string[];
   screenshotLink?: string;
 }
+
+/**
+ * 将存储层数据转换为组件 state 使用的 Tool 类型
+ * 保证 createdAt / updatedAt 都是 Date 对象
+ */
+export function toTool(data: StoredTool): Tool {
+  return {
+    id: data.id,
+    name: data.name,
+    description: data.description,
+    categories: data.categories ?? (data.category ? [data.category] : []),
+    imageUrl: data.imageUrl,
+    downloadLinks: data.downloadLinks ?? (data.downloadLink ? [data.downloadLink] : []),
+    downloadLinkLabels: data.downloadLinkLabels,
+    screenshotLink: data.screenshotLink,
+    createdAt:
+      data.createdAt instanceof Date
+        ? data.createdAt
+        : new Date(data.createdAt),
+    updatedAt:
+      data.updatedAt instanceof Date
+        ? data.updatedAt
+        : new Date(data.updatedAt),
+    order: data.order,
+    fullDescription: data.fullDescription,
+    features: data.features,
+    screenshots: data.screenshots,
+    usage: data.usage,
+  };
+}
