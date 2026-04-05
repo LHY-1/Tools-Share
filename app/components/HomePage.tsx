@@ -5,6 +5,7 @@ import { useSearchParams, useRouter } from 'next/navigation';
 import { Tool } from '@/app/types';
 import Link from 'next/link';
 import { Settings } from './Icons';
+import { LocalImage } from '@/app/lib/image-utils';
 
 const DEFAULT_CATEGORIES = ['开发工具', '设计工具', '工作效率', '文档管理', '其他工具'];
 
@@ -194,9 +195,13 @@ function HomePageContent() {
                 href={`/tools/${tool.id}${searchParams.toString() ? '?' + searchParams.toString() : ''}`}
                 className="bg-white rounded-lg shadow-md hover:shadow-lg transition-shadow overflow-hidden block"
               >
-                <div className="w-full h-40 bg-gradient-to-br from-slate-200 to-slate-300 flex items-center justify-center">
+                <div className="w-full h-40 bg-gradient-to-br from-slate-200 to-slate-300 flex items-center justify-center overflow-hidden">
                   {tool.imageUrl ? (
-                    <img src={tool.imageUrl} alt={tool.name} className="w-full h-full object-cover" />
+                    <LocalImage
+                      src={tool.imageUrl}
+                      alt={tool.name}
+                      className="w-full h-full object-cover"
+                    />
                   ) : (
                     <span className="text-6xl">📦</span>
                   )}

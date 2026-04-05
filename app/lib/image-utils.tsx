@@ -6,6 +6,34 @@
 
 import { saveImage, loadImage, loadAllImages } from './db';
 import type { StoredTool } from '../types';
+import { useState, useEffect } from 'react';
+
+/** 智能图片组件，自动解析 __local_image:<id> 引用并从 IndexedDB 加载 */
+export function LocalImage({
+  src,
+  alt,
+  ...imgProps
+}: React.ImgHTMLAttributes<HTMLImageElement> & { src: string; alt: string }) {
+  const [resolved, setResolved] = useState(src);
+
+  useEffect(() => {
+    if (!src.startsWith('__local_image:')) {
+      setResolved(src);
+      return;
+    }
+    const id = src.replace('__local_image:', '');
+    loadImage(id)
+      .then((img) => {
+        if (!img) return;
+        const reader = new FileReader();
+        reader.onload = () => setResolved(reader.result as string);
+        reader.readAsDataURL(img.blob);
+      })
+      .catch(() => {});
+  }, [src]);
+
+  return <img src={resolved} alt={alt} {...imgProps} />;
+}
 
 /** data: URL → imageId（稳定哈希） */
 export function dataUrlToImageId(dataUrl: string): string {
