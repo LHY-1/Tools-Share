@@ -153,6 +153,7 @@ export default function AdminPage() {
    * 4. Blob URL → 跳过（已是云端）
    * 5. 任意一张图失败 → 整工具同步失败
    * 6. 最终写入 Redis 的 JSON 里图片字段全是 Blob URL
+   * 7. 同步成功后把 Blob URL 写回本地 IndexedDB，下次同步不再重复上传
    */
   const handleSyncToCloud = async () => {
     setCloudLoading(true);
@@ -189,7 +190,14 @@ export default function AdminPage() {
       const result = await res.json();
       if (!res.ok) throw new Error(result.error || '保存失败');
 
-      setCloudStatus(`✓ 已同步 ${processedCount} 个工具到云端`);
+      // ── 关键：把 Blob URL 写回本地 IndexedDB ──────────────────────────────
+      // 同步后工具数据里的图片字段已全是 Blob URL（不再有 __local_image:*）
+      // 下次同步时 isBlobUrl() 检测到 Blob URL → 直接跳过，不重复上传
+      setCloudStatus(`正在回写本地数据...`);
+      await saveTools(syncedTools);
+      setTools(syncedTools as Tool[]);
+
+      setCloudStatus(`✓ 已同步 ${processedCount} 个工具到云端（本地已回写）`);
     } catch (err: any) {
       setCloudStatus(`✗ 同步失败: ${err.message}`);
     } finally {

@@ -2,9 +2,10 @@
 // IndexedDB 配额通常在几百 MB 到几 GB，远大于 localStorage 的 5-10MB
 
 const DB_NAME = 'tool-share-db';
-const DB_VERSION = 2; // 升级版本以添加 images store
+const DB_VERSION = 3; // 升级版本以添加 blob-url-map store
 const TOOLS_STORE = 'tools';
 const IMAGES_STORE = 'images';
+const BLOB_URL_MAP_STORE = 'blob-url-map';
 
 let dbInstance: IDBDatabase | null = null;
 
@@ -31,6 +32,10 @@ function openDB(): Promise<IDBDatabase> {
       if (!db.objectStoreNames.contains(IMAGES_STORE)) {
         // key: imageId (string), value: { id, blob, mimeType, filename }
         db.createObjectStore(IMAGES_STORE, { keyPath: 'id' });
+      }
+      if (!db.objectStoreNames.contains(BLOB_URL_MAP_STORE)) {
+        // key: contentHash (string), value: { hash, blobUrl, uploadedAt }
+        db.createObjectStore(BLOB_URL_MAP_STORE, { keyPath: 'hash' });
       }
     };
   });
@@ -148,6 +153,42 @@ export async function imageIdToObjectUrl(id: string): Promise<string | null> {
   const img = await loadImage(id);
   if (!img) return null;
   return URL.createObjectURL(img.blob);
+}
+
+// ─── Blob URL 全局去重映射 ──────────────────────────────────────────────────
+
+export interface BlobUrlRecord {
+  hash: string;       // 内容哈希（md5/data-hash）
+  blobUrl: string;    // 已上传的 Vercel Blob URL
+  uploadedAt: string; // ISO 时间
+}
+
+/**
+ * 查全局映射表：内容哈希 → 已存在的 Blob URL。
+ * 用于同步时判断图片是否已上传过，避免重复上传。
+ */
+export async function getBlobUrlByHash(hash: string): Promise<string | null> {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(BLOB_URL_MAP_STORE, 'readonly');
+    const req = tx.objectStore(BLOB_URL_MAP_STORE).get(hash);
+    req.onsuccess = () => resolve(req.result?.blobUrl ?? null);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+/**
+ * 写入映射：内容哈希 → Blob URL。
+ * 幂等：已存在则覆盖（URL 可能变化）。
+ */
+export async function setBlobUrlByHash(hash: string, blobUrl: string): Promise<void> {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(BLOB_URL_MAP_STORE, 'readwrite');
+    tx.objectStore(BLOB_URL_MAP_STORE).put({ hash, blobUrl, uploadedAt: new Date().toISOString() });
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
 }
 
 // ─── Migration ───────────────────────────────────────────────────────────────

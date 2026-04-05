@@ -9,9 +9,14 @@
  * 加载图片时：
  * - Blob URL / 外链 URL → 直接用 <img src={url}>
  * - __local_image:<id> → 从 IndexedDB 读取 data: URL（本地缓存优先）
+ *
+ * 同步去重机制：
+ * - IndexedDB blob-url-map store 维护 contentHash → blobUrl 映射
+ * - 上传前先查映射，已存在则复用 URL，不重复上传
+ * - 上传成功后写入映射表
  */
 
-import { saveImage, loadImage, loadAllImages } from './db';
+import { saveImage, loadImage, loadAllImages, getBlobUrlByHash, setBlobUrlByHash } from './db';
 import type { StoredTool } from '../types';
 import { useState, useEffect } from 'react';
 
@@ -35,6 +40,7 @@ export async function uploadToBlob(file: File | Blob): Promise<string> {
 
 /**
  * 把 data: URL 转成 File，再上传到 Vercel Blob。
+ * 带去重：上传前用内容哈希查全局映射表，已存在则跳过。
  */
 export async function uploadDataUrlToBlob(dataUrl: string): Promise<string> {
   const parsed = parseDataUrl(dataUrl);
@@ -47,11 +53,21 @@ export async function uploadDataUrlToBlob(dataUrl: string): Promise<string> {
     bytes[i] = binaryString.charCodeAt(i);
   }
   const blob = new Blob([bytes], { type: mimeType });
-  const ext = extFromMime(mimeType);
-  const filename = `${Date.now()}.${ext}`;
-  const file = new File([blob], filename, { type: mimeType });
 
-  return uploadToBlob(file);
+  // ── 去重 ───────────────────────────────────────────────────────────────
+  const hash = await computeBlobHash(blob);
+  const existing = await getBlobUrlByHash(hash);
+  if (existing) {
+    console.log(`[去重] data: URL 已有相同图片，跳过上传: ${hash.slice(0, 8)}...`);
+    return existing;
+  }
+
+  const ext = extFromMime(mimeType);
+  const filename = `${hash.slice(0, 12)}.${ext}`;
+  const file = new File([blob], filename, { type: mimeType });
+  const blobUrl = await uploadToBlob(file);
+  await setBlobUrlByHash(hash, blobUrl);
+  return blobUrl;
 }
 
 // ─── IndexedDB 草稿缓存 ────────────────────────────────────────────────────────
@@ -473,6 +489,8 @@ export interface SyncImageResult {
   finalUrl: string;
   success: boolean;
   error?: string;
+  /** 内容哈希，若跳过上传说已存在则也返回 */
+  hash?: string;
 }
 
 /**
@@ -532,15 +550,46 @@ export async function materializeImageToCloud(
   return { field, index, original: value, finalUrl: value, success: true };
 }
 
-/** 将 IndexedDB 中的图片记录上传到 Vercel Blob */
+/**
+ * 用 Web Crypto API 计算 Blob 的 SHA-256 哈希（hex 字符串）。
+ */
+async function computeBlobHash(blob: Blob): Promise<string> {
+  const buffer = await blob.arrayBuffer();
+  const hashBuffer = await crypto.subtle.digest('SHA-256', buffer);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+/**
+ * 将 IndexedDB 中的图片记录上传到 Vercel Blob。
+ *
+ * 去重逻辑：
+ * 1. 用内容哈希（SHA-256）查全局映射表 blob-url-map
+ * 2. 已存在 → 直接返回已有 Blob URL（零上传）
+ * 3. 不存在 → 上传 → 写入映射表
+ */
 async function uploadBlobFromIndexedDB(
   img: { blob: Blob; mimeType: string },
   prefix: string
 ): Promise<string> {
+  const hash = await computeBlobHash(img.blob);
+
+  // 查全局去重映射，已存在则复用
+  const existing = await getBlobUrlByHash(hash);
+  if (existing) {
+    console.log(`[去重] 已有相同图片，跳过上传: ${hash.slice(0, 8)}... → ${existing}`);
+    return existing;
+  }
+
+  // 上传并记录映射
   const ext = extFromMime(img.mimeType);
-  const filename = `${prefix}-${Date.now()}.${ext}`;
+  const filename = `${prefix}-${hash.slice(0, 12)}.${ext}`;
   const file = new File([img.blob], filename, { type: img.mimeType });
-  return uploadToBlob(file);
+  const blobUrl = await uploadToBlob(file);
+  await setBlobUrlByHash(hash, blobUrl);
+
+  console.log(`[上传] 新图片已上传: ${hash.slice(0, 8)}... → ${blobUrl}`);
+  return blobUrl;
 }
 
 /**
