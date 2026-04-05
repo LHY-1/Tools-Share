@@ -171,13 +171,41 @@ export default function AdminPage() {
     setCloudLoading(true);
     setCloudStatus('');
     try {
-      const res = await fetch('/api/cloud/load?key=tools-data');
+      const res = await fetch('/api/cloud/load', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key: 'tools-data' }),
+      });
       const result = await res.json();
       if (!res.ok) throw new Error(result.error || '加载失败');
       if (!result.result) throw new Error('云端暂无数据');
-      const storedTools: StoredTool[] = JSON.parse(result.result);
-      await saveTools(storedTools);
-      const mapped = storedTools.map((tool) => ({
+
+      // result.result 是 JSON 字符串，可能为空或无效
+      const rawData = result.result;
+      let storedTools: StoredTool[];
+      try {
+        storedTools = JSON.parse(rawData);
+      } catch {
+        throw new Error('云端数据格式无效，无法解析');
+      }
+      if (!Array.isArray(storedTools)) {
+        throw new Error(`云端数据格式错误：期望数组，得到 ${typeof storedTools}`);
+      }
+
+      // 确保每条数据有 id，没有则跳过
+      const validTools = storedTools.filter((t: StoredTool) => {
+        if (!t?.id) {
+          console.warn('云端数据缺少 id，已跳过:', t);
+          return false;
+        }
+        return true;
+      });
+      if (validTools.length === 0) {
+        throw new Error('云端数据中没有有效的工具记录');
+      }
+
+      await saveTools(validTools);
+      const mapped = validTools.map((tool) => ({
         ...tool,
         createdAt: new Date(tool.createdAt),
         updatedAt: new Date(tool.updatedAt),
@@ -190,7 +218,7 @@ export default function AdminPage() {
         usage: tool.usage || '',
       }));
       setTools(mapped.map((t) => toTool(t)));
-      setCloudStatus(`✓ 已从云端恢复 ${storedTools.length} 个工具`);
+      setCloudStatus(`✓ 已从云端恢复 ${validTools.length} 个工具`);
     } catch (err: any) {
       setCloudStatus(`✗ 恢复失败: ${err.message}`);
     } finally {

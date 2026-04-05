@@ -2,10 +2,9 @@ import { NextRequest, NextResponse } from 'next/server';
 
 export const runtime = 'nodejs';
 
-export async function GET(req: NextRequest) {
+export async function POST(req: NextRequest) {
   try {
-    const { searchParams } = new URL(req.url);
-    const key = searchParams.get('key');
+    const { key } = await req.json();
     if (!key) {
       return NextResponse.json({ error: 'key required' }, { status: 400 });
     }
