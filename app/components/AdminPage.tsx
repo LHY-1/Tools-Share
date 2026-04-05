@@ -7,7 +7,7 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { loadTools, saveTools } from '@/app/lib/db';
 import { exportAllData, importData, type ImportResult } from '@/app/lib/export-import';
-import { processExternalImages } from '@/app/lib/image-utils';
+import { processExternalImages, resolveImageRefs } from '@/app/lib/image-utils';
 
 const DEFAULT_CATEGORIES = ['开发工具', '设计工具', '工作效率', '文档管理', '其他工具'];
 
@@ -150,7 +150,10 @@ export default function AdminPage() {
     setCloudStatus('');
     try {
       const storedTools = await loadTools<StoredTool>();
-      const data = JSON.stringify(storedTools);
+      // 同步前把所有 __local_image:<id> 引用反解成 data: URL，
+      // 这样云端存的就是完整图片数据，不依赖本地 IndexedDB
+      const resolvedTools = await Promise.all(storedTools.map(resolveImageRefs));
+      const data = JSON.stringify(resolvedTools);
       const res = await fetch('/api/cloud/save', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
