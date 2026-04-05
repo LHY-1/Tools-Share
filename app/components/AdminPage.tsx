@@ -7,7 +7,7 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { loadTools, saveTools } from '@/app/lib/db';
 import { exportAllData, importData, type ImportResult } from '@/app/lib/export-import';
-import { processExternalImages, resolveImageRefs, fetchAndStoreExternalImage, isExternalUrl, LocalImage } from '@/app/lib/image-utils';
+import { materializeToolImagesToCloud, LocalImage } from '@/app/lib/image-utils';
 
 const DEFAULT_CATEGORIES = ['开发工具', '设计工具', '工作效率', '文档管理', '其他工具'];
 
@@ -145,66 +145,41 @@ export default function AdminPage() {
   const [cloudLoading, setCloudLoading] = useState(false);
   const [cloudStatus, setCloudStatus] = useState<string>('');
 
+  /**
+   * 同步到云端：
+   * 1. 遍历每个工具的每个图片字段
+   * 2. __local_image:<id> → 读 IndexedDB → 上传 Blob → blob URL
+   * 3. 外链 URL → 下载 → 上传 Blob → blob URL
+   * 4. Blob URL → 跳过（已是云端）
+   * 5. 任意一张图失败 → 整工具同步失败
+   * 6. 最终写入 Redis 的 JSON 里图片字段全是 Blob URL
+   */
   const handleSyncToCloud = async () => {
     setCloudLoading(true);
     setCloudStatus('');
     try {
       const storedTools = await loadTools<StoredTool>();
-      // 第一步：把 __local_image:<id> 引用反解成 data: URL
-      const resolvedTools = await Promise.all(storedTools.map(resolveImageRefs));
-
-      // 第二步：把外部图片 URL 也抓取转存成 data: URL
-      setCloudStatus('正在下载外部图片...');
       const syncedTools: StoredTool[] = [];
-      for (const tool of resolvedTools) {
-        const clone = { ...tool };
-        const fieldsToCheck: (keyof StoredTool)[] = ['imageUrl', 'screenshotLink'];
-        if ((clone as any).screenshots) {
-          (clone as any).screenshots = [...((clone as any).screenshots as string[])];
+      let processedCount = 0;
+
+      for (const tool of storedTools) {
+        setCloudStatus(`正在同步工具 "${tool.name}" 的图片...`);
+
+        const { tool: synced, results } = await materializeToolImagesToCloud(tool, (msg) => {
+          setCloudStatus(msg);
+        });
+
+        const failures = results.filter((r) => !r.success);
+        if (failures.length > 0) {
+          const msgs = failures.map((f) => f.error).join('; ');
+          throw new Error(`工具 "${tool.name}" 图片同步失败: ${msgs}`);
         }
-        for (const field of fieldsToCheck) {
-          const val = (clone as any)[field] as string | undefined;
-          if (val && isExternalUrl(val)) {
-            const result = await fetchAndStoreExternalImage(val);
-            if (result.imageId) {
-              const img = await (await import('@/app/lib/db')).loadImage(result.imageId);
-              if (img) {
-                const reader = new FileReader();
-                const dataUrl = await new Promise<string>((resolve, reject) => {
-                  reader.onload = () => resolve(reader.result as string);
-                  reader.onerror = reject;
-                  reader.readAsDataURL(img.blob);
-                });
-                (clone as any)[field] = dataUrl;
-              }
-            }
-          }
-        }
-        // screenshots 数组
-        const screenshots = (clone as any).screenshots as string[] | undefined;
-        if (screenshots) {
-          for (let i = 0; i < screenshots.length; i++) {
-            if (screenshots[i] && isExternalUrl(screenshots[i])) {
-              const result = await fetchAndStoreExternalImage(screenshots[i]);
-              if (result.imageId) {
-                const img = await (await import('@/app/lib/db')).loadImage(result.imageId);
-                if (img) {
-                  const reader = new FileReader();
-                  const dataUrl = await new Promise<string>((resolve, reject) => {
-                    reader.onload = () => resolve(reader.result as string);
-                    reader.onerror = reject;
-                    reader.readAsDataURL(img.blob);
-                  });
-                  screenshots[i] = dataUrl;
-                }
-              }
-            }
-          }
-        }
-        syncedTools.push(clone);
+
+        syncedTools.push(synced);
+        processedCount++;
       }
 
-      setCloudStatus('正在上传云端...');
+      setCloudStatus(`正在写入云端数据库...`);
       const data = JSON.stringify(syncedTools);
       const res = await fetch('/api/cloud/save', {
         method: 'POST',
@@ -213,7 +188,8 @@ export default function AdminPage() {
       });
       const result = await res.json();
       if (!res.ok) throw new Error(result.error || '保存失败');
-      setCloudStatus(`✓ 已同步 ${storedTools.length} 个工具到云端`);
+
+      setCloudStatus(`✓ 已同步 ${processedCount} 个工具到云端`);
     } catch (err: any) {
       setCloudStatus(`✗ 同步失败: ${err.message}`);
     } finally {
@@ -233,18 +209,11 @@ export default function AdminPage() {
       });
       const result = await res.json();
       if (!res.ok) throw new Error(result.error || '加载失败');
-      if (!result.result) throw new Error('云端暂无数据');
 
-      // result.result 是 JSON 字符串，可能为空或无效
-      const rawData = result.result;
-      let storedTools: StoredTool[];
-      try {
-        storedTools = JSON.parse(rawData);
-      } catch {
-        throw new Error('云端数据格式无效，无法解析');
-      }
-      if (!Array.isArray(storedTools)) {
-        throw new Error(`云端数据格式错误：期望数组，得到 ${typeof storedTools}`);
+      // 新 API 返回 { tools: [...] }，load API 已做 gzip 解压
+      const storedTools: StoredTool[] = Array.isArray(result.tools) ? result.tools : [];
+      if (storedTools.length === 0) {
+        throw new Error('云端暂无数据');
       }
 
       // 确保每条数据有 id，没有则跳过
@@ -335,45 +304,14 @@ export default function AdminPage() {
     setSaveStatus('正在处理图片...');
 
     try {
-      // ── 统一处理所有图片字段 ────────────────────────────────────────────────
-      // 1. 外链图片 → 服务端抓取 → 存入 IndexedDB → 替换为 __local_image:<id>
-      // 2. data: URL   → 存入 IndexedDB（已有）→ 替换为 __local_image:<id>
-      // 3. __local_image:* → 跳过（已是本地引用）
-      const { processedFields, results } = await processExternalImages(
-        {
-          imageUrl: formData.imageUrl,
-          screenshotLink: formData.screenshotLink,
-          screenshots: formData.screenshots ?? [],
-        },
-        (msg) => setSaveStatus(msg)
-      );
-
-      // 汇总失败信息，弹窗告知用户（fallback 场景）
-      const failures: string[] = [];
-      if (!results.imageUrl.success) {
-        const err = String(results.imageUrl.error ?? '');
-        failures.push(`封面图: ${err || '处理失败'}`);
-      }
-      if (!results.screenshotLink.success) {
-        const err = String(results.screenshotLink.error ?? '');
-        failures.push(`快照链接: ${err || '处理失败'}`);
-      }
-      for (const r of results.screenshots) {
-        if (!r.success) {
-          const err = String(r.error ?? '');
-          failures.push(`截图[${r.index}]: ${err || '处理失败'}`);
-        }
-      }
-      if (failures.length > 0) {
-        setSaveStatus('');
-        alert(`⚠️ 以下图片无法下载，已保留原始链接（显示可能受限）：\n\n${failures.join('\n')}`);
-      }
-
+      // ── 本地保存：直接存 URL，不阻塞 ──────────────────────────────────────
+      // 外链 URL / Blob URL / __local_image:<id> → 原样存 IndexedDB
+      // 同步到云端时才做图片实化（__local_image → Blob URL，外链 → Blob URL）
       const normalizedData = {
         ...formData,
-        imageUrl: processedFields.imageUrl,
-        screenshotLink: processedFields.screenshotLink,
-        screenshots: processedFields.screenshots,
+        imageUrl: formData.imageUrl ?? '',
+        screenshotLink: formData.screenshotLink ?? '',
+        screenshots: formData.screenshots ?? [],
         categories: formData.categories.length ? formData.categories : [DEFAULT_CATEGORIES[0]],
         downloadLinks: formData.downloadLinks || [],
         downloadLinkLabels: formData.downloadLinkLabels || [],
