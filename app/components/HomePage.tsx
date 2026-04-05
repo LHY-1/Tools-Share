@@ -1,93 +1,72 @@
 'use client';
 
-import { useState, useMemo, useEffect, Suspense } from 'react';
+import { useState, useEffect } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
-import { Tool } from '@/app/types';
 import Link from 'next/link';
 import { Settings } from './Icons';
-import { LocalImage } from '@/app/lib/image-utils';
+import { fetchCloudTools, normalizeCloudTool } from '@/app/lib/cloud-tools';
+import type { Tool } from '@/app/types';
 
 const DEFAULT_CATEGORIES = ['开发工具', '设计工具', '工作效率', '文档管理', '其他工具'];
 
-interface StoredTool {
-  id: string;
-  name: string;
-  description: string;
-  category?: string;
-  categories?: string[];
-  imageUrl: string;
-  downloadLink?: string;
-  downloadLinks?: string[];
-  createdAt: string;
-  updatedAt: string;
-  order?: number;
-  screenshotLink?: string;
-}
-
-function HomePageContent() {
+export default function HomePage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [mounted, setMounted] = useState(false);
-
-  const { tools, categories } = useMemo(() => {
-    if (typeof window === 'undefined') {
-      return { tools: [], categories: DEFAULT_CATEGORIES };
-    }
-    
-    const saved = localStorage.getItem('tools');
-    const savedCategories = localStorage.getItem('categories');
-    
-    let cats = DEFAULT_CATEGORIES;
-    let tools: Tool[] = [];
-    
-    if (saved) {
-      try {
-        const parsed: StoredTool[] = JSON.parse(saved);
-        tools = parsed.map((tool) => ({
-          ...tool,
-          createdAt: new Date(tool.createdAt),
-          updatedAt: new Date(tool.updatedAt),
-          categories: tool.categories || (tool.category ? [tool.category] : [DEFAULT_CATEGORIES[0]]),
-          downloadLinks: tool.downloadLinks || (tool.downloadLink ? [tool.downloadLink] : []),
-          screenshotLink: tool.screenshotLink || '',
-        }));
-      } catch (error) {
-        console.error('Error loading tools:', error);
-      }
-    }
-    
-    if (savedCategories) {
-      try {
-        cats = JSON.parse(savedCategories);
-      } catch (error) {
-        console.error('Error loading categories:', error);
-      }
-    }
-    
-    return { tools, categories: cats };
-  }, []);
-
-  // 从 URL 获取当前标签，如果没有则不选中任何分类（显示全部）
-  const selectedCategory = searchParams.get('category') || '';
+  const [tools, setTools] = useState<Tool[]>([]);
+  const [categories, setCategories] = useState<string[]>(DEFAULT_CATEGORIES);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
     setMounted(true);
+    loadFromCloud();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // 切换标签时更新 URL
-  const handleCategoryChange = (category: string) => {
+  async function loadFromCloud() {
+    setLoading(true);
+    setLoadError(null);
+    const cloudTools = await fetchCloudTools();
+    if (!cloudTools) {
+      setLoadError('无法连接云端，请检查网络');
+      setLoading(false);
+      return;
+    }
+    if (cloudTools.length === 0) {
+      setLoadError(null);
+      setTools([]);
+      setLoading(false);
+      return;
+    }
+    const normalized = cloudTools.map(normalizeCloudTool);
+    setTools(normalized);
+
+    // 收集所有分类
+    const cats = new Set<string>(DEFAULT_CATEGORIES);
+    for (const t of normalized) {
+      for (const c of t.categories ?? []) {
+        cats.add(c);
+      }
+    }
+    setCategories([...cats]);
+    setLoading(false);
+  }
+
+  const selectedCategory = searchParams.get('category') || '';
+
+  function handleCategoryChange(category: string) {
     const params = new URLSearchParams(searchParams);
     params.set('category', category);
     router.push(`/?${params.toString()}`);
-  };
+  }
 
   const filteredTools = selectedCategory
     ? tools
-        .filter((tool) => tool.categories?.includes(selectedCategory))
+        .filter((t) => t.categories?.includes(selectedCategory))
         .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
     : tools.sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime());
 
-  // 服务端渲染时保持静默，避免 hydration 不匹配
   if (!mounted) {
     return (
       <main className="min-h-screen bg-gradient-to-b from-slate-50 to-slate-100">
@@ -98,44 +77,23 @@ function HomePageContent() {
                 <h1 className="text-3xl font-bold text-slate-900">工具库</h1>
                 <p className="text-slate-600 text-sm mt-0.5">发现高效工具，提升工作效率</p>
               </div>
-              <div className="inline-flex items-center gap-2 px-4 py-2 bg-slate-700 text-white rounded-lg font-medium">
-                <Settings className="w-5 h-5" />
-                管理
-              </div>
             </div>
           </div>
         </header>
-        <nav className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-          <div className="flex gap-2 overflow-x-auto pb-2">
-            <div
-              className="px-4 py-2 rounded-full font-medium transition-all whitespace-nowrap bg-blue-100 text-blue-700 shadow-md"
-            >
-              全部
-            </div>
-            {DEFAULT_CATEGORIES.map((category) => (
-              <div
-                key={category}
-                className="px-4 py-2 rounded-full font-medium transition-all whitespace-nowrap bg-white text-slate-700 border border-slate-200"
-              >
-                {category}
-              </div>
+        <div className="max-w-6xl mx-auto px-4 py-12">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+            {Array.from({ length: 8 }).map((_, i) => (
+              <div key={i} className="bg-white rounded-xl border border-slate-200 h-56 animate-pulse" />
             ))}
           </div>
-        </nav>
-        <section className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8 pb-16">
-          <div className="flex flex-col items-center justify-center py-16 text-center">
-            <div className="mb-4">
-              <span className="text-6xl">📦</span>
-            </div>
-            <p className="text-slate-600 text-lg">加载中...</p>
-          </div>
-        </section>
+        </div>
       </main>
     );
   }
 
   return (
     <main className="min-h-screen bg-gradient-to-b from-slate-50 to-slate-100">
+      {/* Header */}
       <header className="sticky top-0 z-40 bg-white/90 backdrop-blur-md border-b border-slate-200">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
           <div className="flex items-center justify-between">
@@ -143,130 +101,134 @@ function HomePageContent() {
               <h1 className="text-3xl font-bold text-slate-900">工具库</h1>
               <p className="text-slate-600 text-sm mt-0.5">发现高效工具，提升工作效率</p>
             </div>
-            <Link
-              href="/admin"
-              className="inline-flex items-center gap-2 px-4 py-2 bg-slate-700 hover:bg-slate-800 text-white rounded-lg transition-colors font-medium"
-            >
-              <Settings className="w-5 h-5" />
-              管理
-            </Link>
+            <div className="flex items-center gap-3">
+              {/* 刷新按钮 */}
+              <button
+                onClick={loadFromCloud}
+                className="p-2 text-slate-500 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors"
+                title="刷新"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+              </button>
+              <Link href="/admin">
+                <button className="flex items-center gap-1.5 px-4 py-2 bg-slate-900 text-white text-sm rounded-lg hover:bg-slate-700 transition-colors">
+                  <Settings className="w-4 h-4" />
+                  管理
+                </button>
+              </Link>
+            </div>
           </div>
         </div>
       </header>
 
-      <nav className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-        <div className="flex gap-2 overflow-x-auto pb-2">
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {/* 分类标签 */}
+        <div className="flex flex-wrap gap-2 mb-8">
           <button
-            onClick={() => {
-              const params = new URLSearchParams(searchParams);
-              params.delete('category');
-              router.push(`/?${params.toString()}`);
-            }}
-            className={`px-4 py-2 rounded-full font-medium transition-all whitespace-nowrap ${
-              selectedCategory === ''
-                ? 'bg-blue-100 text-blue-700 shadow-md'
-                : 'bg-white text-slate-700 border border-slate-200 hover:border-slate-300'
+            onClick={() => handleCategoryChange('')}
+            className={`px-4 py-1.5 rounded-full text-sm font-medium transition-colors ${
+              !selectedCategory
+                ? 'bg-slate-900 text-white'
+                : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
             }`}
           >
             全部
           </button>
-          {categories.map((category) => (
+          {categories.map((cat) => (
             <button
-              key={category}
-              onClick={() => handleCategoryChange(category)}
-              className={`px-4 py-2 rounded-full font-medium transition-all whitespace-nowrap ${
-                selectedCategory === category
-                  ? 'bg-blue-100 text-blue-700 shadow-md'
-                  : 'bg-white text-slate-700 border border-slate-200 hover:border-slate-300'
+              key={cat}
+              onClick={() => handleCategoryChange(cat)}
+              className={`px-4 py-1.5 rounded-full text-sm font-medium transition-colors ${
+                selectedCategory === cat
+                  ? 'bg-slate-900 text-white'
+                  : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
               }`}
             >
-              {category}
+              {cat}
             </button>
           ))}
         </div>
-      </nav>
 
-      <section className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8 pb-16">
-        {filteredTools.length > 0 ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        {/* 加载状态 */}
+        {loading && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+            {Array.from({ length: 8 }).map((_, i) => (
+              <div key={i} className="bg-white rounded-xl border border-slate-200 h-56 animate-pulse" />
+            ))}
+          </div>
+        )}
+
+        {/* 错误/空状态 */}
+        {!loading && loadError && (
+          <div className="text-center py-20">
+            <p className="text-slate-500 mb-4">{loadError}</p>
+            <button
+              onClick={loadFromCloud}
+              className="px-4 py-2 bg-slate-900 text-white text-sm rounded-lg hover:bg-slate-700"
+            >
+              重试
+            </button>
+          </div>
+        )}
+
+        {!loading && !loadError && filteredTools.length === 0 && (
+          <div className="text-center py-20">
+            <p className="text-slate-500 text-lg">
+              {selectedCategory ? `暂无「${selectedCategory}」分类的工具` : '暂无工具'}
+            </p>
+            <Link href="/admin">
+              <button className="mt-4 px-4 py-2 bg-slate-900 text-white text-sm rounded-lg hover:bg-slate-700">
+                去管理页发布第一个工具
+              </button>
+            </Link>
+          </div>
+        )}
+
+        {/* 工具网格 */}
+        {!loading && !loadError && filteredTools.length > 0 && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
             {filteredTools.map((tool) => (
-              <Link
-                key={tool.id}
-                href={`/tools/${tool.id}${searchParams.toString() ? '?' + searchParams.toString() : ''}`}
-                className="bg-white rounded-lg shadow-md hover:shadow-lg transition-shadow overflow-hidden block"
-              >
-                <div className="w-full h-40 bg-gradient-to-br from-slate-200 to-slate-300 flex items-center justify-center overflow-hidden">
+              <Link key={tool.id} href={`/tools/${tool.id}`}>
+                <div className="group bg-white rounded-xl border border-slate-200 hover:border-slate-300 hover:shadow-md transition-all overflow-hidden cursor-pointer h-full flex flex-col">
                   {tool.imageUrl ? (
-                    <LocalImage
-                      src={tool.imageUrl}
-                      alt={tool.name}
-                      className="w-full h-full object-cover"
-                    />
+                    <div className="aspect-video bg-slate-100 overflow-hidden">
+                      <img
+                        src={tool.imageUrl}
+                        alt={tool.name}
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                      />
+                    </div>
                   ) : (
-                    <span className="text-6xl">📦</span>
+                    <div className="aspect-video bg-slate-100 flex items-center justify-center">
+                      <span className="text-slate-400 text-4xl font-bold">{tool.name[0]}</span>
+                    </div>
                   )}
-                </div>
-                <div className="p-4">
-                  <h3 className="font-semibold text-slate-900 mb-2">{tool.name}</h3>
-                  <p className="text-sm text-slate-600 line-clamp-2">{tool.description}</p>
-                  {tool.categories?.length ? (
-                    <div className="mt-2 flex flex-wrap gap-2">
-                      {tool.categories.slice(0, 2).map((cat) => (
-                        <span key={cat} className="text-xs px-2 py-1 bg-slate-100 text-slate-700 rounded-full">
+                  <div className="p-4 flex flex-col flex-1">
+                    <h3 className="font-semibold text-slate-900 group-hover:text-slate-700 line-clamp-1">
+                      {tool.name}
+                    </h3>
+                    <p className="text-slate-500 text-sm mt-1 line-clamp-2 flex-1">
+                      {tool.description}
+                    </p>
+                    <div className="flex flex-wrap gap-1 mt-3">
+                      {(tool.categories ?? []).slice(0, 3).map((cat) => (
+                        <span
+                          key={cat}
+                          className="text-xs bg-slate-100 text-slate-600 px-2 py-0.5 rounded"
+                        >
                           {cat}
                         </span>
                       ))}
                     </div>
-                  ) : null}
-
+                  </div>
                 </div>
               </Link>
             ))}
           </div>
-        ) : (
-          <div className="flex flex-col items-center justify-center py-16 text-center">
-            <div className="mb-4">
-              <span className="text-6xl">📦</span>
-            </div>
-            <p className="text-slate-600 text-lg">该分类暂无工具</p>
-            <p className="text-slate-500 text-sm mt-2">请在管理界面添加工具</p>
-          </div>
         )}
-      </section>
-
-      <footer className="border-t border-slate-200 bg-white py-6">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
-          <p className="text-slate-600 text-sm">
-            © 2026 工具库。所有内容本地存储。
-          </p>
-        </div>
-      </footer>
+      </div>
     </main>
-  );
-}
-
-export default function HomePage() {
-  return (
-    <Suspense fallback={
-      <main className="min-h-screen bg-gradient-to-b from-slate-50 to-slate-100">
-        <header className="sticky top-0 z-40 bg-white/90 backdrop-blur-md border-b border-slate-200">
-          <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <h1 className="text-3xl font-bold text-slate-900">工具库</h1>
-                <p className="text-slate-600 text-sm mt-0.5">发现高效工具，提升工作效率</p>
-              </div>
-            </div>
-          </div>
-        </header>
-        <section className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8 pb-16">
-          <div className="flex flex-col items-center justify-center py-16 text-center">
-            <p className="text-slate-600 text-lg">加载中...</p>
-          </div>
-        </section>
-      </main>
-    }>
-      <HomePageContent />
-    </Suspense>
   );
 }
