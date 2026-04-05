@@ -12,9 +12,13 @@ interface StoredTool {
   id: string;
   name: string;
   description: string;
-  category: string;
+  category?: string;
+  categories?: string[];
   imageUrl: string;
-  downloadLink: string;
+  downloadLink?: string;
+  downloadLinks?: string[];
+  downloadLinkLabels?: string[];
+  screenshotLink?: string;
   createdAt: string;
   updatedAt: string;
   order?: number;
@@ -28,13 +32,18 @@ export default function AdminPage() {
   const [newCategory, setNewCategory] = useState('');
   const [editingCategoryId, setEditingCategoryId] = useState<number | null>(null);
   const [editingCategoryName, setEditingCategoryName] = useState('');
+  const [newDownloadLink, setNewDownloadLink] = useState('');
+  const [newDownloadLinkLabel, setNewDownloadLinkLabel] = useState('');
+  const [newToolCategory, setNewToolCategory] = useState('');
   
   const [formData, setFormData] = useState<CreateToolInput>({
     name: '',
     description: '',
-    category: DEFAULT_CATEGORIES[0],
+    categories: [DEFAULT_CATEGORIES[0]],
     imageUrl: '',
-    downloadLink: '',
+    downloadLinks: [],
+    downloadLinkLabels: [],
+    screenshotLink: '',
   });
   const [draggedId, setDraggedId] = useState<string | null>(null);
 
@@ -56,6 +65,9 @@ export default function AdminPage() {
           ...tool,
           createdAt: new Date(tool.createdAt),
           updatedAt: new Date(tool.updatedAt),
+          categories: tool.categories || (tool.category ? [tool.category] : [DEFAULT_CATEGORIES[0]]),
+          downloadLinks: tool.downloadLinks || (tool.downloadLink ? [tool.downloadLink] : []),
+          screenshotLink: tool.screenshotLink || '',
         }));
       } catch (error) {
         console.error('Error loading tools:', error);
@@ -90,15 +102,22 @@ export default function AdminPage() {
 
   const handleAddOrUpdate = () => {
     if (!formData.name.trim() || !formData.description.trim()) {
-      alert('请填写工具名称和说明');
+      alert('请填写工具名称和简介');
       return;
     }
+
+    const normalizedData = {
+      ...formData,
+      categories: formData.categories.length ? formData.categories : [DEFAULT_CATEGORIES[0]],
+      downloadLinks: formData.downloadLinks || [],
+      downloadLinkLabels: formData.downloadLinkLabels || [],
+    };
 
     if (editingId) {
       setTools(
         tools.map((t) =>
           t.id === editingId
-            ? { ...t, ...formData, updatedAt: new Date() }
+            ? { ...t, ...normalizedData, updatedAt: new Date() }
             : t
         )
       );
@@ -106,7 +125,7 @@ export default function AdminPage() {
     } else {
       const newTool: Tool = {
         id: Date.now().toString(),
-        ...formData,
+        ...normalizedData,
         createdAt: new Date(),
         updatedAt: new Date(),
         order: tools.length,
@@ -117,9 +136,11 @@ export default function AdminPage() {
     setFormData({
       name: '',
       description: '',
-      category: categories[0],
+      categories: [categories[0]],
       imageUrl: '',
-      downloadLink: '',
+      downloadLinks: [],
+      downloadLinkLabels: [],
+      screenshotLink: '',
     });
     setShowForm(false);
   };
@@ -128,9 +149,11 @@ export default function AdminPage() {
     setFormData({
       name: tool.name,
       description: tool.description,
-      category: tool.category,
+      categories: tool.categories || (tool.category ? [tool.category] : [DEFAULT_CATEGORIES[0]]),
       imageUrl: tool.imageUrl,
-      downloadLink: tool.downloadLink,
+      downloadLinks: tool.downloadLinks || (tool.downloadLink ? [tool.downloadLink] : []),
+      downloadLinkLabels: tool.downloadLinkLabels || [],
+      screenshotLink: tool.screenshotLink || '',
     });
     setEditingId(tool.id);
     setShowForm(true);
@@ -188,12 +211,64 @@ export default function AdminPage() {
       // 将被删除分类的工具移动到第一个分类
       setTools(
         tools.map((t) =>
-          t.category === categoryToDelete
-            ? { ...t, category: newCategories[0] }
+          t.categories?.includes(categoryToDelete)
+            ? { ...t, categories: t.categories?.filter((c) => c !== categoryToDelete) || [] }
             : t
         )
       );
     }
+  };
+
+  const handleAddToolCategory = (category: string) => {
+    if (!category.trim()) return;
+    setFormData((prev) => {
+      const nextCategories = prev.categories.includes(category)
+        ? prev.categories
+        : [...prev.categories, category];
+      return { ...prev, categories: nextCategories };
+    });
+  };
+
+  const handleRemoveToolCategory = (index: number) => {
+    setFormData((prev) => ({
+      ...prev,
+      categories: prev.categories.filter((_, i) => i !== index),
+    }));
+  };
+
+  const handleAddDownloadLink = () => {
+    if (!newDownloadLink.trim()) return;
+    setFormData((prev) => ({
+      ...prev,
+      downloadLinks: [...prev.downloadLinks, newDownloadLink.trim()],
+      downloadLinkLabels: [...(prev.downloadLinkLabels || []), newDownloadLinkLabel.trim() || `版本 ${prev.downloadLinks.length + 1}`],
+    }));
+    setNewDownloadLink('');
+    setNewDownloadLinkLabel('');
+  };
+
+  const handleRemoveDownloadLink = (index: number) => {
+    setFormData((prev) => ({
+      ...prev,
+      downloadLinks: prev.downloadLinks.filter((_, i) => i !== index),
+      downloadLinkLabels: prev.downloadLinkLabels?.filter((_, i) => i !== index),
+    }));
+  };
+
+  const handleUpdateDownloadLinkLabel = (index: number, label: string) => {
+    setFormData((prev) => {
+      const newLabels = [...(prev.downloadLinkLabels || [])];
+      newLabels[index] = label;
+      return { ...prev, downloadLinkLabels: newLabels };
+    });
+  };
+
+  const handleUpdateDownloadLink = (index: number, link: string) => {
+    setFormData((prev) => {
+      const newLinks = [...prev.downloadLinks];
+      newLinks[index] = link;
+      return { ...prev, downloadLinks: newLinks };
+    });
   };
 
   const handleDragStart = (id: string) => {
@@ -252,7 +327,10 @@ export default function AdminPage() {
               <div className="flex items-center justify-between mb-6">
                 <h2 className="text-xl font-semibold text-slate-900">工具列表</h2>
                 <button
-                  onClick={() => setShowForm(true)}
+                  onClick={() => {
+                    setShowForm(true);
+                    setEditingId(null);
+                  }}
                   className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors font-medium"
                 >
                   <Plus className="w-4 h-4" />
@@ -286,9 +364,13 @@ export default function AdminPage() {
                       <div className="flex-1">
                         <h3 className="font-medium text-slate-900">{tool.name}</h3>
                         <p className="text-sm text-slate-600 line-clamp-1">{tool.description}</p>
-                        <span className="inline-block mt-1 px-2 py-1 bg-slate-200 text-slate-700 text-xs rounded-full">
-                          {tool.category}
+                        <div className="mt-1 flex flex-wrap gap-2">
+                      {tool.categories?.map((cat) => (
+                        <span key={cat} className="inline-block px-2 py-1 bg-slate-200 text-slate-700 text-xs rounded-full">
+                          {cat}
                         </span>
+                      ))}
+                    </div>
                       </div>
                       <div className="flex items-center gap-2">
                         <button
@@ -417,6 +499,8 @@ export default function AdminPage() {
                 {showPreview ? '预览已启用' : '预览已禁用'}
               </p>
             </div>
+
+
           </div>
         </div>
 
@@ -436,9 +520,10 @@ export default function AdminPage() {
                       setFormData({
                         name: '',
                         description: '',
-                        category: categories[0],
+                        categories: [categories[0]],
                         imageUrl: '',
-                        downloadLink: '',
+                        downloadLinks: [],
+                        screenshotLink: '',
                       });
                     }}
                     className="p-2 text-slate-400 hover:text-slate-600 transition-colors"
@@ -470,13 +555,13 @@ export default function AdminPage() {
 
                   <div>
                     <label className="block text-sm font-medium text-slate-700 mb-1">
-                      工具说明 *
+                      工具简介 *
                     </label>
                     <textarea
                       value={formData.description}
                       onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                       className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                      placeholder="输入工具说明"
+                      placeholder="输入工具简介"
                       rows={3}
                       required
                     />
@@ -486,17 +571,49 @@ export default function AdminPage() {
                     <label className="block text-sm font-medium text-slate-700 mb-1">
                       分类
                     </label>
-                    <select
-                      value={formData.category}
-                      onChange={(e) => setFormData({ ...formData, category: e.target.value })}
-                      className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    >
-                      {categories.map((category) => (
-                        <option key={category} value={category}>
+                    <div className="flex flex-wrap gap-2 mb-3">
+                      {formData.categories.map((category, idx) => (
+                        <span key={`${category}-${idx}`} className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-50 text-blue-700 text-sm">
                           {category}
-                        </option>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setFormData((prev) => ({
+                                ...prev,
+                                categories: prev.categories.filter((_, i) => i !== idx),
+                              }));
+                            }}
+                            className="text-blue-500 hover:text-blue-700"
+                          >
+                            ×
+                          </button>
+                        </span>
                       ))}
-                    </select>
+                    </div>
+                    <div className="flex gap-2">
+                      <select
+                        value={newToolCategory}
+                        onChange={(e) => setNewToolCategory(e.target.value)}
+                        className="flex-1 px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      >
+                        <option value="">选择分类</option>
+                        {categories.map((category) => (
+                          <option key={category} value={category}>
+                            {category}
+                          </option>
+                        ))}
+                      </select>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          handleAddToolCategory(newToolCategory);
+                          setNewToolCategory('');
+                        }}
+                        className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+                      >
+                        添加分类
+                      </button>
+                    </div>
                   </div>
 
                   <div>
@@ -516,12 +633,67 @@ export default function AdminPage() {
                     <label className="block text-sm font-medium text-slate-700 mb-1">
                       下载链接
                     </label>
+                    <div className="space-y-2 mb-3">
+                      {formData.downloadLinks.map((link, idx) => (
+                        <div key={idx} className="flex items-center gap-2 bg-slate-50 p-3 rounded-lg">
+                          <input
+                            type="text"
+                            value={formData.downloadLinkLabels?.[idx] || ''}
+                            onChange={(e) => handleUpdateDownloadLinkLabel(idx, e.target.value)}
+                            className="w-28 px-2 py-1 text-xs border border-slate-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                            placeholder={`版本 ${idx + 1}`}
+                          />
+                          <input
+                            type="url"
+                            value={link}
+                            onChange={(e) => handleUpdateDownloadLink(idx, e.target.value)}
+                            className="flex-1 px-2 py-1 text-sm border border-slate-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveDownloadLink(idx)}
+                            className="text-red-600 hover:text-red-700 p-1"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="flex gap-2 flex-wrap">
+                      <input
+                        type="text"
+                        value={newDownloadLinkLabel}
+                        onChange={(e) => setNewDownloadLinkLabel(e.target.value)}
+                        className="w-32 px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        placeholder="版本标签"
+                      />
+                      <input
+                        type="url"
+                        value={newDownloadLink}
+                        onChange={(e) => setNewDownloadLink(e.target.value)}
+                        className="flex-1 min-w-[200px] px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        placeholder="https://example.com/download"
+                      />
+                      <button
+                        type="button"
+                        onClick={handleAddDownloadLink}
+                        className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors"
+                      >
+                        添加
+                      </button>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">
+                      快照链接
+                    </label>
                     <input
                       type="url"
-                      value={formData.downloadLink}
-                      onChange={(e) => setFormData({ ...formData, downloadLink: e.target.value })}
+                      value={formData.screenshotLink}
+                      onChange={(e) => setFormData({ ...formData, screenshotLink: e.target.value })}
                       className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                      placeholder="https://example.com/download"
+                      placeholder="https://example.com/screenshot.png"
                     />
                   </div>
 
@@ -540,9 +712,10 @@ export default function AdminPage() {
                         setFormData({
                           name: '',
                           description: '',
-                          category: categories[0],
+                          categories: [categories[0]],
                           imageUrl: '',
-                          downloadLink: '',
+                          downloadLinks: [],
+                          screenshotLink: '',
                         });
                       }}
                       className="flex-1 px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-lg transition-colors font-medium"

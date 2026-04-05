@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, Suspense } from 'react';
+import { useSearchParams, useRouter } from 'next/navigation';
 import { Tool } from '@/app/types';
 import Link from 'next/link';
 import { Settings } from './Icons';
@@ -11,16 +12,20 @@ interface StoredTool {
   id: string;
   name: string;
   description: string;
-  category: string;
+  category?: string;
+  categories?: string[];
   imageUrl: string;
-  downloadLink: string;
+  downloadLink?: string;
+  downloadLinks?: string[];
   createdAt: string;
   updatedAt: string;
   order?: number;
+  screenshotLink?: string;
 }
 
-export default function HomePage() {
-  const [selectedCategory, setSelectedCategory] = useState<string>(DEFAULT_CATEGORIES[0]);
+function HomePageContent() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const [mounted, setMounted] = useState(false);
 
   const { tools, categories } = useMemo(() => {
@@ -41,6 +46,9 @@ export default function HomePage() {
           ...tool,
           createdAt: new Date(tool.createdAt),
           updatedAt: new Date(tool.updatedAt),
+          categories: tool.categories || (tool.category ? [tool.category] : [DEFAULT_CATEGORIES[0]]),
+          downloadLinks: tool.downloadLinks || (tool.downloadLink ? [tool.downloadLink] : []),
+          screenshotLink: tool.screenshotLink || '',
         }));
       } catch (error) {
         console.error('Error loading tools:', error);
@@ -58,21 +66,25 @@ export default function HomePage() {
     return { tools, categories: cats };
   }, []);
 
+  // 从 URL 获取当前标签，如果没有则不选中任何分类（显示全部）
+  const selectedCategory = searchParams.get('category') || '';
+
   useEffect(() => {
     setMounted(true);
   }, []);
 
-  useEffect(() => {
-    if (categories.length > 0 && !categories.includes(selectedCategory)) {
-      setSelectedCategory(categories[0]);
-    }
-  }, [categories, selectedCategory]);
+  // 切换标签时更新 URL
+  const handleCategoryChange = (category: string) => {
+    const params = new URLSearchParams(searchParams);
+    params.set('category', category);
+    router.push(`/?${params.toString()}`);
+  };
 
   const filteredTools = selectedCategory
     ? tools
-        .filter((tool) => tool.category === selectedCategory)
+        .filter((tool) => tool.categories?.includes(selectedCategory))
         .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
-    : [];
+    : tools.sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime());
 
   // 服务端渲染时保持静默，避免 hydration 不匹配
   if (!mounted) {
@@ -94,14 +106,15 @@ export default function HomePage() {
         </header>
         <nav className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
           <div className="flex gap-2 overflow-x-auto pb-2">
+            <div
+              className="px-4 py-2 rounded-full font-medium transition-all whitespace-nowrap bg-blue-100 text-blue-700 shadow-md"
+            >
+              全部
+            </div>
             {DEFAULT_CATEGORIES.map((category) => (
               <div
                 key={category}
-                className={`px-4 py-2 rounded-full font-medium transition-all whitespace-nowrap ${
-                  selectedCategory === category
-                    ? 'bg-blue-100 text-blue-700 shadow-md'
-                    : 'bg-white text-slate-700 border border-slate-200'
-                }`}
+                className="px-4 py-2 rounded-full font-medium transition-all whitespace-nowrap bg-white text-slate-700 border border-slate-200"
               >
                 {category}
               </div>
@@ -142,10 +155,24 @@ export default function HomePage() {
 
       <nav className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
         <div className="flex gap-2 overflow-x-auto pb-2">
+          <button
+            onClick={() => {
+              const params = new URLSearchParams(searchParams);
+              params.delete('category');
+              router.push(`/?${params.toString()}`);
+            }}
+            className={`px-4 py-2 rounded-full font-medium transition-all whitespace-nowrap ${
+              selectedCategory === ''
+                ? 'bg-blue-100 text-blue-700 shadow-md'
+                : 'bg-white text-slate-700 border border-slate-200 hover:border-slate-300'
+            }`}
+          >
+            全部
+          </button>
           {categories.map((category) => (
             <button
               key={category}
-              onClick={() => setSelectedCategory(category)}
+              onClick={() => handleCategoryChange(category)}
               className={`px-4 py-2 rounded-full font-medium transition-all whitespace-nowrap ${
                 selectedCategory === category
                   ? 'bg-blue-100 text-blue-700 shadow-md'
@@ -164,8 +191,8 @@ export default function HomePage() {
             {filteredTools.map((tool) => (
               <Link
                 key={tool.id}
-                href={`/tools/${tool.id}`}
-                className="bg-white rounded-lg shadow-md hover:shadow-lg transition-shadow overflow-hidden"
+                href={`/tools/${tool.id}${searchParams.toString() ? '?' + searchParams.toString() : ''}`}
+                className="bg-white rounded-lg shadow-md hover:shadow-lg transition-shadow overflow-hidden block"
               >
                 <div className="w-full h-40 bg-gradient-to-br from-slate-200 to-slate-300 flex items-center justify-center">
                   {tool.imageUrl ? (
@@ -177,6 +204,16 @@ export default function HomePage() {
                 <div className="p-4">
                   <h3 className="font-semibold text-slate-900 mb-2">{tool.name}</h3>
                   <p className="text-sm text-slate-600 line-clamp-2">{tool.description}</p>
+                  {tool.categories?.length ? (
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {tool.categories.slice(0, 2).map((cat) => (
+                        <span key={cat} className="text-xs px-2 py-1 bg-slate-100 text-slate-700 rounded-full">
+                          {cat}
+                        </span>
+                      ))}
+                    </div>
+                  ) : null}
+
                 </div>
               </Link>
             ))}
@@ -195,10 +232,36 @@ export default function HomePage() {
       <footer className="border-t border-slate-200 bg-white py-6">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
           <p className="text-slate-600 text-sm">
-            © 2024 工具库。所有内容本地存储。
+            © 2026 工具库。所有内容本地存储。
           </p>
         </div>
       </footer>
     </main>
+  );
+}
+
+export default function HomePage() {
+  return (
+    <Suspense fallback={
+      <main className="min-h-screen bg-gradient-to-b from-slate-50 to-slate-100">
+        <header className="sticky top-0 z-40 bg-white/90 backdrop-blur-md border-b border-slate-200">
+          <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <h1 className="text-3xl font-bold text-slate-900">工具库</h1>
+                <p className="text-slate-600 text-sm mt-0.5">发现高效工具，提升工作效率</p>
+              </div>
+            </div>
+          </div>
+        </header>
+        <section className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8 pb-16">
+          <div className="flex flex-col items-center justify-center py-16 text-center">
+            <p className="text-slate-600 text-lg">加载中...</p>
+          </div>
+        </section>
+      </main>
+    }>
+      <HomePageContent />
+    </Suspense>
   );
 }

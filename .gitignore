@@ -8,6 +8,9 @@
 !.yarn/patches
 !.yarn/plugins
 !.yarn/releases
+
+# pages directory (problematic on exFAT)
+pages/
 !.yarn/versions
 
 # testing
