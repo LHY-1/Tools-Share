@@ -183,14 +183,23 @@ export default function AdminPage() {
 
       // 汇总失败信息，弹窗告知用户（fallback 场景）
       const failures: string[] = [];
-      if (!results.imageUrl.success) failures.push(`imageUrl: ${results.imageUrl.error ?? '失败'}`);
-      if (!results.screenshotLink.success) failures.push(`screenshotLink: ${results.screenshotLink.error ?? '失败'}`);
+      if (!results.imageUrl.success) {
+        const err = String(results.imageUrl.error ?? '');
+        failures.push(`封面图: ${err || '处理失败'}`);
+      }
+      if (!results.screenshotLink.success) {
+        const err = String(results.screenshotLink.error ?? '');
+        failures.push(`快照链接: ${err || '处理失败'}`);
+      }
       for (const r of results.screenshots) {
-        if (!r.success) failures.push(`screenshots[${r.index}]: ${r.error ?? '失败'}`);
+        if (!r.success) {
+          const err = String(r.error ?? '');
+          failures.push(`截图[${r.index}]: ${err || '处理失败'}`);
+        }
       }
       if (failures.length > 0) {
         setSaveStatus('');
-        alert(`⚠️ 以下图片无法下载，已保留原始链接（显示可能受限）：\n${failures.join('\n')}`);
+        alert(`⚠️ 以下图片无法下载，已保留原始链接（显示可能受限）：\n\n${failures.join('\n')}`);
       }
 
       const normalizedData = {
