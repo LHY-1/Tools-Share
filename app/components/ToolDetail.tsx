@@ -9,6 +9,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeRaw from 'rehype-raw';
 import { loadTools, saveTools, migrateFromLocalStorage } from '@/app/lib/db';
+import { persistLocalImages, resolveImageRefs } from '@/app/lib/image-utils';
 
 export default function ToolDetail({ toolId, isAdmin = false }: { toolId: string; isAdmin?: boolean }) {
   const router = useRouter();
@@ -64,7 +65,9 @@ export default function ToolDetail({ toolId, isAdmin = false }: { toolId: string
         
         const found = tools.find((t) => t.id === toolId);
         if (found) {
-          const toolData = toTool(found);
+          // 将 __local_image:<id> 引用替换回真实 data: URL
+          const resolved = await resolveImageRefs(found);
+          const toolData = toTool(resolved);
           setTool(toolData);
           setEditData({
             fullDescription: toolData.fullDescription || '',
@@ -192,16 +195,25 @@ export default function ToolDetail({ toolId, isAdmin = false }: { toolId: string
       
       const index = tools.findIndex((t) => t.id === toolId);
       if (index !== -1) {
+        // 将工具中的 data: URL 本地图片写入 IndexedDB images store，
+        // 并将 data: URL 替换为 __local_image:<id> 引用
+        const imageFields = await persistLocalImages({
+          imageUrl: tools[index].imageUrl,
+          screenshotLink: editData.screenshotLink,
+          screenshots: editData.screenshots,
+        });
+
         tools[index] = {
           ...tools[index],
           fullDescription: editData.fullDescription,
           features: editData.features,
-          screenshots: editData.screenshots,
+          screenshots: imageFields.screenshots,
           usage: editData.usage,
           categories: editData.categories,
           downloadLinks: editData.downloadLinks,
           downloadLinkLabels: editData.downloadLinkLabels,
-          screenshotLink: editData.screenshotLink,
+          screenshotLink: imageFields.screenshotLink,
+          imageUrl: imageFields.imageUrl,
           updatedAt: new Date().toISOString(),
         };
         
@@ -216,20 +228,19 @@ export default function ToolDetail({ toolId, isAdmin = false }: { toolId: string
         }
 
         if (!tool) return;
-        setTool(
-          toTool({
-            ...tool,
-            fullDescription: editData.fullDescription,
-            features: editData.features,
-            screenshots: editData.screenshots,
-            usage: editData.usage,
-            categories: editData.categories,
-            downloadLinks: editData.downloadLinks,
-            downloadLinkLabels: editData.downloadLinkLabels,
-            screenshotLink: editData.screenshotLink,
-            updatedAt: new Date(),
-          })
-        );
+        setTool({
+          ...tool,
+          fullDescription: editData.fullDescription,
+          features: editData.features,
+          screenshots: imageFields.screenshots,
+          usage: editData.usage,
+          categories: editData.categories,
+          downloadLinks: editData.downloadLinks,
+          downloadLinkLabels: editData.downloadLinkLabels,
+          screenshotLink: imageFields.screenshotLink,
+          imageUrl: imageFields.imageUrl,
+          updatedAt: new Date(),
+        });
         setIsEditing(false);
       }
     } catch (error) {
