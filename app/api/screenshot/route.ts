@@ -18,8 +18,8 @@ export async function POST(request: NextRequest) {
       
       // fullPage: true 截取整个页面，false 只截取视口区域
       const screenshotBuffer = await page.screenshot({ type: 'png', fullPage });
-      
-      return new NextResponse(screenshotBuffer, {
+
+      return new Response(new Uint8Array(screenshotBuffer), {
         headers: {
           'Content-Type': 'image/png',
           'Cache-Control': 'public, max-age=3600',
