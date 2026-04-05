@@ -7,6 +7,7 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { loadTools, saveTools } from '@/app/lib/db';
 import { exportAllData, importData, type ImportResult } from '@/app/lib/export-import';
+import { processExternalImages } from '@/app/lib/image-utils';
 
 const DEFAULT_CATEGORIES = ['开发工具', '设计工具', '工作效率', '文档管理', '其他工具'];
 
@@ -30,6 +31,7 @@ export default function AdminPage() {
     downloadLinks: [],
     downloadLinkLabels: [],
     screenshotLink: '',
+    screenshots: [],
   });
   const [draggedId, setDraggedId] = useState<string | null>(null);
 
@@ -41,6 +43,8 @@ export default function AdminPage() {
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
   const [importModalOpen, setImportModalOpen] = useState(false);
   const [importLoading, setImportLoading] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveStatus, setSaveStatus] = useState<string>('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -154,23 +158,56 @@ export default function AdminPage() {
     }
   };
 
-  const handleAddOrUpdate = () => {
+  const handleAddOrUpdate = async () => {
     if (!formData.name.trim() || !formData.description.trim()) {
       alert('请填写工具名称和简介');
       return;
     }
 
-    const normalizedData = {
-      ...formData,
-      categories: formData.categories.length ? formData.categories : [DEFAULT_CATEGORIES[0]],
-      downloadLinks: formData.downloadLinks || [],
-      downloadLinkLabels: formData.downloadLinkLabels || [],
-    };
+    setIsSaving(true);
+    setSaveStatus('正在处理图片...');
 
-    if (editingId) {
-      const existingTool = tools.find((t) => t.id === editingId);
-      setTools(
-        tools.map((t) =>
+    try {
+      // ── 统一处理所有图片字段 ────────────────────────────────────────────────
+      // 1. 外链图片 → 服务端抓取 → 存入 IndexedDB → 替换为 __local_image:<id>
+      // 2. data: URL   → 存入 IndexedDB（已有）→ 替换为 __local_image:<id>
+      // 3. __local_image:* → 跳过（已是本地引用）
+      const { processedFields, results } = await processExternalImages(
+        {
+          imageUrl: formData.imageUrl,
+          screenshotLink: formData.screenshotLink,
+          screenshots: formData.screenshots ?? [],
+        },
+        (msg) => setSaveStatus(msg)
+      );
+
+      // 汇总失败信息，弹窗告知用户（fallback 场景）
+      const failures: string[] = [];
+      if (!results.imageUrl.success) failures.push(`imageUrl: ${results.imageUrl.error ?? '失败'}`);
+      if (!results.screenshotLink.success) failures.push(`screenshotLink: ${results.screenshotLink.error ?? '失败'}`);
+      for (const r of results.screenshots) {
+        if (!r.success) failures.push(`screenshots[${r.index}]: ${r.error ?? '失败'}`);
+      }
+      if (failures.length > 0) {
+        setSaveStatus('');
+        alert(`⚠️ 以下图片无法下载，已保留原始链接（显示可能受限）：\n${failures.join('\n')}`);
+      }
+
+      const normalizedData = {
+        ...formData,
+        imageUrl: processedFields.imageUrl,
+        screenshotLink: processedFields.screenshotLink,
+        screenshots: processedFields.screenshots,
+        categories: formData.categories.length ? formData.categories : [DEFAULT_CATEGORIES[0]],
+        downloadLinks: formData.downloadLinks || [],
+        downloadLinkLabels: formData.downloadLinkLabels || [],
+      };
+
+      setSaveStatus('正在保存...');
+
+      if (editingId) {
+        const existingTool = tools.find((t) => t.id === editingId);
+        const updated = tools.map((t) =>
           t.id === editingId
             ? {
                 ...t,
@@ -182,30 +219,51 @@ export default function AdminPage() {
                 updatedAt: new Date(),
               }
             : t
-        )
-      );
-      setEditingId(null);
-    } else {
-      const newTool: Tool = {
-        id: Date.now().toString(),
-        ...normalizedData,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-        order: tools.length,
-      };
-      setTools([...tools, newTool]);
-    }
+        );
+        setTools(updated);
+        // 立即持久化，不依赖 useEffect
+        await saveTools(updated as unknown as StoredTool[]);
+        try {
+          localStorage.setItem('tools', JSON.stringify(updated));
+        } catch {
+          // localStorage 满，无所谓，IndexedDB 已有
+        }
+        setEditingId(null);
+      } else {
+        const newTool: Tool = {
+          id: Date.now().toString(),
+          ...normalizedData,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+          order: tools.length,
+        };
+        const updated = [...tools, newTool];
+        setTools(updated);
+        await saveTools(updated as unknown as StoredTool[]);
+        try {
+          localStorage.setItem('tools', JSON.stringify(updated));
+        } catch {
+          // localStorage 满，无所谓，IndexedDB 已有
+        }
+      }
 
-    setFormData({
-      name: '',
-      description: '',
-      categories: [categories[0]],
-      imageUrl: '',
-      downloadLinks: [],
-      downloadLinkLabels: [],
-      screenshotLink: '',
-    });
-    setShowForm(false);
+      setFormData({
+        name: '',
+        description: '',
+        categories: [categories[0]],
+        imageUrl: '',
+        downloadLinks: [],
+        downloadLinkLabels: [],
+        screenshotLink: '',
+      });
+      setShowForm(false);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      alert(`保存失败: ${msg}`);
+    } finally {
+      setSaveStatus('');
+      setIsSaving(false);
+    }
   };
 
   const handleEdit = (tool: Tool) => {
@@ -649,13 +707,18 @@ export default function AdminPage() {
                   </div>
 
                   <div className="flex gap-3 pt-4">
-                    <button type="submit"
-                      className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors font-medium">
-                      {editingId ? '更新' : '添加'}
+                    <button type="submit" disabled={isSaving}
+                      className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white rounded-lg transition-colors font-medium flex items-center justify-center gap-2">
+                      {isSaving ? (
+                        <>
+                          <span className="animate-spin">⟳</span>
+                          {saveStatus || '保存中...'}
+                        </>
+                      ) : editingId ? '更新' : '添加'}
                     </button>
-                    <button type="button"
+                    <button type="button" disabled={isSaving}
                       onClick={() => { setShowForm(false); setEditingId(null); setFormData({ name: '', description: '', categories: [categories[0]], imageUrl: '', downloadLinks: [], screenshotLink: '' }); }}
-                      className="flex-1 px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-lg transition-colors font-medium">
+                      className="flex-1 px-4 py-2 bg-slate-200 hover:bg-slate-300 disabled:bg-slate-100 text-slate-700 rounded-lg transition-colors font-medium">
                       取消
                     </button>
                   </div>

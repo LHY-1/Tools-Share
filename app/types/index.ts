@@ -53,6 +53,7 @@ export interface CreateToolInput {
   downloadLinks: string[];
   downloadLinkLabels?: string[];
   screenshotLink?: string;
+  screenshots?: string[];
 }
 
 /** 将存储层数据转换为组件 state 使用的 Tool 类型 */

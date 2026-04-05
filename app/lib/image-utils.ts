@@ -101,6 +101,185 @@ function extFromMime(mimeType: string): string {
   return map[mimeType] ?? 'bin';
 }
 
+// ─── 外链图片自动转本地 ────────────────────────────────────────────────────────
+
+/**
+ * 判断一个字符串是否是外部 http/https URL。
+ * 注意：__local_image:* 和 data: URL 返回 false。
+ */
+export function isExternalUrl(value: string): boolean {
+  if (!value || typeof value !== 'string') return false;
+  try {
+    const u = new URL(value);
+    return u.protocol === 'http:' || u.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * 抓取外链图片并写入 IndexedDB images store。
+ * 返回 imageId（形如 remote_<md5>_<timestamp>）。
+ * 失败时返回 null。
+ */
+export async function fetchAndStoreExternalImage(
+  url: string
+): Promise<{ imageId: string; fallback: false } | { imageId: null; fallback: true; error: string }> {
+  try {
+    const apiUrl = `/api/fetch-image?url=${encodeURIComponent(url)}`;
+    const res = await fetch(apiUrl);
+    const json = (await res.json()) as { dataUrl?: string; error?: string };
+
+    if (!res.ok || !json.dataUrl) {
+      return { imageId: null, fallback: true, error: json.error ?? `HTTP ${res.status}` };
+    }
+
+    // data URL 已到手，后续走现有 saveLocalImage 流程
+    const imageId = await saveLocalImage(json.dataUrl);
+    return { imageId, fallback: false };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return { imageId: null, fallback: true, error: msg };
+  }
+}
+
+export interface ProcessImagesResult {
+  results: {
+    imageUrl: { success: boolean; fallback: boolean; error?: string };
+    screenshotLink: { success: boolean; fallback: boolean; error?: string };
+    screenshots: Array<{ success: boolean; fallback: boolean; error?: string; index: number }>;
+  };
+  processedFields: {
+    imageUrl: string;
+    screenshotLink: string;
+    screenshots: string[];
+  };
+}
+
+/**
+ * 处理工具的所有图片字段：
+ * - __local_image:* → 跳过（已是本地引用）
+ * - data: / blob: → 跳过（本地图片走 saveLocalImage）
+ * - 外链 URL → 调用 /api/fetch-image → 保存到 IndexedDB → 替换为 __local_image:<id>
+ * - 其他（非 URL 字符串）→ 保留原值（fallback）
+ *
+ * 同时对 data: URL 调用 saveLocalImage（确保 IndexedDB images store 也有副本）。
+ *
+ * 返回每一步的处理结果及替换后的字段。
+ */
+export async function processExternalImages(
+  fields: {
+    imageUrl?: string;
+    screenshotLink?: string;
+    screenshots?: string[];
+  },
+  onProgress?: (msg: string) => void
+): Promise<ProcessImagesResult> {
+  let outImageUrl = fields.imageUrl ?? '';
+  let outScreenshotLink = fields.screenshotLink ?? '';
+  const outScreenshots = [...(fields.screenshots ?? [])];
+
+  const result: {
+    imageUrl: { success: boolean; fallback: boolean; error?: string };
+    screenshotLink: { success: boolean; fallback: boolean; error?: string };
+    screenshots: Array<{ success: boolean; fallback: boolean; error?: string; index: number }>;
+  } = {
+    imageUrl: { success: false, fallback: false },
+    screenshotLink: { success: false, fallback: false },
+    screenshots: [],
+  };
+
+  // ── imageUrl ────────────────────────────────────────────────────────────────
+  if (isExternalUrl(outImageUrl)) {
+    onProgress?.(`正在抓取外链图片 imageUrl: ${outImageUrl}`);
+    const r = await fetchAndStoreExternalImage(outImageUrl);
+    if (r.imageId) {
+      outImageUrl = `__local_image:${r.imageId}`;
+      result.imageUrl = { success: true, fallback: false };
+    } else {
+      const fallback = r as { imageId: null; fallback: true; error: string };
+      result.imageUrl = { success: false, fallback: true, error: fallback.error };
+    }
+  } else if (isLocalImage(outImageUrl)) {
+    // data: URL 也持久化到 IndexedDB
+    try {
+      await saveLocalImage(outImageUrl);
+      const id = dataUrlToImageId(outImageUrl);
+      outImageUrl = `__local_image:${id}`;
+      result.imageUrl = { success: true, fallback: false };
+    } catch {
+      result.imageUrl = { success: false, fallback: true, error: 'data URL 解析失败' };
+    }
+  } else if (outImageUrl.startsWith('__local_image:')) {
+    result.imageUrl = { success: true, fallback: false }; // 已本地，跳过
+  } else if (outImageUrl) {
+    // 非 URL 字符串，保留（fallback）
+    result.imageUrl = { success: false, fallback: true, error: '非 URL 内容' };
+  }
+
+  // ── screenshotLink ───────────────────────────────────────────────────────────
+  if (isExternalUrl(outScreenshotLink)) {
+    onProgress?.(`正在抓取外链图片 screenshotLink: ${outScreenshotLink}`);
+    const r2 = await fetchAndStoreExternalImage(outScreenshotLink);
+    if (r2.imageId) {
+      outScreenshotLink = `__local_image:${r2.imageId}`;
+      result.screenshotLink = { success: true, fallback: false };
+    } else {
+      result.screenshotLink = { success: false, fallback: true, error: (r2 as { imageId: null; fallback: true; error: string }).error };
+    }
+  } else if (isLocalImage(outScreenshotLink)) {
+    try {
+      await saveLocalImage(outScreenshotLink);
+      const id = dataUrlToImageId(outScreenshotLink);
+      outScreenshotLink = `__local_image:${id}`;
+      result.screenshotLink = { success: true, fallback: false };
+    } catch {
+      result.screenshotLink = { success: false, fallback: true, error: 'data URL 解析失败' };
+    }
+  } else if (outScreenshotLink.startsWith('__local_image:')) {
+    result.screenshotLink = { success: true, fallback: false };
+  } else if (outScreenshotLink) {
+    result.screenshotLink = { success: false, fallback: true, error: '非 URL 内容' };
+  }
+
+  // ── screenshots ─────────────────────────────────────────────────────────────
+  for (let i = 0; i < outScreenshots.length; i++) {
+    const s = outScreenshots[i];
+    if (isExternalUrl(s)) {
+      onProgress?.(`正在抓取外链图片 screenshots[${i}]: ${s}`);
+      const r3 = await fetchAndStoreExternalImage(s);
+      if (r3.imageId) {
+        outScreenshots[i] = `__local_image:${r3.imageId}`;
+        result.screenshots.push({ success: true, fallback: false, index: i });
+      } else {
+        result.screenshots.push({ success: false, fallback: true, error: (r3 as { imageId: null; fallback: true; error: string }).error, index: i });
+      }
+    } else if (isLocalImage(s)) {
+      try {
+        await saveLocalImage(s);
+        const id = dataUrlToImageId(s);
+        outScreenshots[i] = `__local_image:${id}`;
+        result.screenshots.push({ success: true, fallback: false, index: i });
+      } catch {
+        result.screenshots.push({ success: false, fallback: true, error: 'data URL 解析失败', index: i });
+      }
+    } else if (s.startsWith('__local_image:')) {
+      result.screenshots.push({ success: true, fallback: false, index: i });
+    } else {
+      result.screenshots.push({ success: false, fallback: true, error: '非 URL 内容', index: i });
+    }
+  }
+
+  return {
+    results: result,
+    processedFields: {
+      imageUrl: outImageUrl,
+      screenshotLink: outScreenshotLink,
+      screenshots: outScreenshots,
+    },
+  };
+}
+
 // ─── 加载时解析引用 ───────────────────────────────────────────────────────────
 
 /** blob → data: URL */
