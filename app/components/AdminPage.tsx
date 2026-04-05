@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, type ChangeEvent } from 'react';
 import { Tool, StoredTool, CreateToolInput, toTool } from '@/app/types';
 import { Trash2, Edit2, Plus, Eye, EyeOff, GripVertical, Upload, Download, CheckCircle, AlertCircle } from './Icons';
 import Link from 'next/link';
@@ -38,6 +38,34 @@ export default function AdminPage() {
   const [tools, setTools] = useState<Tool[]>([]);
   const [categories, setCategories] = useState<string[]>(DEFAULT_CATEGORIES);
   const [isLoading, setIsLoading] = useState(true);
+
+  // 图片上传
+  const imageFileInputRef = useRef<HTMLInputElement>(null);
+  const snapshotFileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const base64 = ev.target?.result as string;
+      setFormData((prev) => ({ ...prev, imageUrl: base64 }));
+    };
+    reader.readAsDataURL(file);
+    e.target.value = '';
+  };
+
+  const handleSnapshotUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const base64 = ev.target?.result as string;
+      setFormData((prev) => ({ ...prev, screenshotLink: base64 }));
+    };
+    reader.readAsDataURL(file);
+    e.target.value = '';
+  };
 
   // 导入结果提示
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
@@ -673,10 +701,24 @@ export default function AdminPage() {
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">图片链接</label>
-                    <input type="url" value={formData.imageUrl} onChange={(e) => setFormData({ ...formData, imageUrl: e.target.value })}
-                      className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                      placeholder="https://example.com/image.png" />
+                    <label className="block text-sm font-medium text-slate-700 mb-1">封面图</label>
+                    <div className="flex gap-2">
+                      <input
+                        type="url"
+                        value={formData.imageUrl.startsWith('data:') ? '' : formData.imageUrl}
+                        onChange={(e: ChangeEvent<HTMLInputElement>) => setFormData({ ...formData, imageUrl: e.target.value })}
+                        className="flex-1 px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        placeholder="https://example.com/image.png" />
+                      <button type="button" onClick={() => imageFileInputRef.current?.click()}
+                        className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors font-medium">
+                        本地上传
+                      </button>
+                      <input ref={imageFileInputRef} type="file" accept="image/*"
+                        onChange={handleImageUpload} className="hidden" />
+                    </div>
+                    {formData.imageUrl.startsWith('data:') && (
+                      <p className="text-xs text-green-600 mt-1">✓ 已选择本地图片</p>
+                    )}
                   </div>
 
                   <div>
@@ -710,9 +752,23 @@ export default function AdminPage() {
 
                   <div>
                     <label className="block text-sm font-medium text-slate-700 mb-1">快照链接</label>
-                    <input type="url" value={formData.screenshotLink} onChange={(e) => setFormData({ ...formData, screenshotLink: e.target.value })}
-                      className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                      placeholder="https://example.com/screenshot.png" />
+                    <div className="flex gap-2">
+                      <input
+                        type="url"
+                        value={(formData.screenshotLink ?? '').startsWith('data:') ? '' : formData.screenshotLink ?? ''}
+                        onChange={(e: ChangeEvent<HTMLInputElement>) => setFormData({ ...formData, screenshotLink: e.target.value })}
+                        className="flex-1 px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        placeholder="https://example.com/screenshot.png" />
+                      <button type="button" onClick={() => snapshotFileInputRef.current?.click()}
+                        className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors font-medium">
+                        本地上传
+                      </button>
+                      <input ref={snapshotFileInputRef} type="file" accept="image/*"
+                        onChange={handleSnapshotUpload} className="hidden" />
+                    </div>
+                    {(formData.screenshotLink ?? '').startsWith('data:') && (
+                      <p className="text-xs text-green-600 mt-1">✓ 已选择本地图片</p>
+                    )}
                   </div>
 
                   <div className="flex gap-3 pt-4">
