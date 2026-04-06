@@ -34,7 +34,7 @@ function openDB(): Promise<IDBDatabase> {
         db.createObjectStore(IMAGES_STORE, { keyPath: 'id' });
       }
       if (!db.objectStoreNames.contains(BLOB_URL_MAP_STORE)) {
-        // key: contentHash (string), value: { hash, blobUrl, uploadedAt }
+        // key: contentHash (string), value: { hash, blobUrl, edgeColor, uploadedAt }
         db.createObjectStore(BLOB_URL_MAP_STORE, { keyPath: 'hash' });
       }
     };
@@ -112,6 +112,7 @@ export interface StoredImage {
   blob: Blob;
   mimeType: string;
   filename: string;
+  edgeColor?: string; // 边缘采样颜色 rgb(r, g, b)
 }
 
 /** 保存一张图片，返回 imageId */
@@ -204,14 +205,27 @@ export async function getBlobUrlByHash(hash: string): Promise<string | null> {
 }
 
 /**
- * 写入映射：内容哈希 → Blob URL。
- * 幂等：已存在则覆盖（URL 可能变化）。
+ * 读取映射：内容哈希 → 边缘颜色。
  */
-export async function setBlobUrlByHash(hash: string, blobUrl: string): Promise<void> {
+export async function getBlobColorByHash(hash: string): Promise<string | null> {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(BLOB_URL_MAP_STORE, 'readonly');
+    const req = tx.objectStore(BLOB_URL_MAP_STORE).get(hash);
+    req.onsuccess = () => resolve(req.result?.edgeColor ?? null);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+/**
+ * 写入映射：内容哈希 → Blob URL（含边缘颜色）。
+ * 幂等：已存在则覆盖。
+ */
+export async function setBlobUrlByHash(hash: string, blobUrl: string, edgeColor?: string): Promise<void> {
   const db = await openDB();
   return new Promise((resolve, reject) => {
     const tx = db.transaction(BLOB_URL_MAP_STORE, 'readwrite');
-    tx.objectStore(BLOB_URL_MAP_STORE).put({ hash, blobUrl, uploadedAt: new Date().toISOString() });
+    tx.objectStore(BLOB_URL_MAP_STORE).put({ hash, blobUrl, edgeColor, uploadedAt: new Date().toISOString() });
     tx.oncomplete = () => resolve();
     tx.onerror = () => reject(tx.error);
   });

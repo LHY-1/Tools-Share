@@ -41,6 +41,7 @@ export async function uploadToBlob(file: File | Blob): Promise<string> {
 /**
  * 把 data: URL 转成 File，再上传到 Vercel Blob。
  * 带去重：上传前用内容哈希查全局映射表，已存在则跳过。
+ * 颜色编码进 URL query (?bg=rgb(...))。
  */
 export async function uploadDataUrlToBlob(dataUrl: string): Promise<string> {
   const parsed = parseDataUrl(dataUrl);
@@ -49,9 +50,7 @@ export async function uploadDataUrlToBlob(dataUrl: string): Promise<string> {
   const { mimeType, base64 } = parsed;
   const binaryString = atob(base64);
   const bytes = new Uint8Array(binaryString.length);
-  for (let i = 0; i < binaryString.length; i++) {
-    bytes[i] = binaryString.charCodeAt(i);
-  }
+  for (let i = 0; i < binaryString.length; i++) bytes[i] = binaryString.charCodeAt(i);
   const blob = new Blob([bytes], { type: mimeType });
 
   // ── 去重 ───────────────────────────────────────────────────────────────
@@ -62,11 +61,17 @@ export async function uploadDataUrlToBlob(dataUrl: string): Promise<string> {
     return existing;
   }
 
+  // 计算边缘颜色
+  const edgeColor = await computeEdgeColor(blob);
+
   const ext = extFromMime(mimeType);
   const filename = `${hash.slice(0, 12)}.${ext}`;
   const file = new File([blob], filename, { type: mimeType });
-  const blobUrl = await uploadToBlob(file);
-  await setBlobUrlByHash(hash, blobUrl);
+  let blobUrl: string = await uploadToBlob(file);
+
+  // 颜色编码进 URL
+  blobUrl = `${blobUrl}?bg=${encodeURIComponent(edgeColor)}`;
+  await setBlobUrlByHash(hash, blobUrl, edgeColor);
   return blobUrl;
 }
 
@@ -82,13 +87,54 @@ export function dataUrlToImageId(dataUrl: string): string {
 }
 
 /**
- * 将一个 data: URL 写入 IndexedDB images store（本地草稿缓存）。
- * 幂等：已存在则直接返回 imageId。
+ * 用 Canvas 从 Blob 边缘采样，计算平均颜色。
+ * 失败时返回默认灰色。
  */
-export async function saveLocalImage(dataUrl: string): Promise<string> {
+async function computeEdgeColor(blob: Blob): Promise<string> {
+  try {
+    const bitmap = await createImageBitmap(blob);
+    const canvas = document.createElement('canvas');
+    const size = 50;
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext('2d')!;
+    ctx.drawImage(bitmap, 0, 0, size, size);
+    bitmap.close();
+
+    // 采样四边
+    const edgePixels: number[] = [];
+    const imgData = ctx.getImageData(0, 0, size, size).data;
+
+    // 顶行 + 底行
+    for (let x = 0; x < size; x++) {
+      edgePixels.push(imgData[(x * 4)], imgData[(x * 4) + 1], imgData[(x * 4) + 2]);
+      edgePixels.push(imgData[((size - 1) * size + x) * 4], imgData[((size - 1) * size + x) * 4 + 1], imgData[((size - 1) * size + x) * 4 + 2]);
+    }
+    // 左列 + 右列（排除四角）
+    for (let y = 1; y < size - 1; y++) {
+      edgePixels.push(imgData[(y * size) * 4], imgData[(y * size) * 4 + 1], imgData[(y * size) * 4 + 2]);
+      edgePixels.push(imgData[(y * size + size - 1) * 4], imgData[(y * size + size - 1) * 4 + 1], imgData[(y * size + size - 1) * 4 + 2]);
+    }
+
+    let r = 0, g = 0, b = 0, count = 0;
+    for (let i = 0; i < edgePixels.length; i += 3) {
+      r += edgePixels[i]; g += edgePixels[i + 1]; b += edgePixels[i + 2]; count++;
+    }
+    if (count === 0) return '#f1f5f9';
+    return `rgb(${Math.round(r / count)}, ${Math.round(g / count)}, ${Math.round(b / count)})`;
+  } catch {
+    return '#f1f5f9';
+  }
+}
+
+/**
+ * 将 data: URL 保存到 IndexedDB，同时计算边缘颜色。
+ * 幂等：已存在则直接返回 imageId（含旧颜色）。
+ */
+export async function saveLocalImage(dataUrl: string): Promise<{ id: string; edgeColor: string }> {
   const imageId = dataUrlToImageId(dataUrl);
   const existing = await loadImage(imageId);
-  if (existing) return imageId;
+  if (existing) return { id: imageId, edgeColor: existing.edgeColor ?? '#f1f5f9' };
 
   const parsed = parseDataUrl(dataUrl);
   if (!parsed) throw new Error(`无法解析 data URL: ${dataUrl.slice(0, 50)}`);
@@ -96,20 +142,29 @@ export async function saveLocalImage(dataUrl: string): Promise<string> {
   const { mimeType, base64 } = parsed;
   const binaryString = atob(base64);
   const bytes = new Uint8Array(binaryString.length);
-  for (let i = 0; i < binaryString.length; i++) {
-    bytes[i] = binaryString.charCodeAt(i);
-  }
+  for (let i = 0; i < binaryString.length; i++) bytes[i] = binaryString.charCodeAt(i);
   const blob = new Blob([bytes], { type: mimeType });
+
+  // 同时计算边缘颜色
+  const edgeColor = await computeEdgeColor(blob);
   const filename = `${imageId}.${extFromMime(mimeType)}`;
 
-  await saveImage({ id: imageId, blob, mimeType, filename });
-  return imageId;
+  await saveImage({ id: imageId, blob, mimeType, filename, edgeColor });
+  return { id: imageId, edgeColor };
 }
 
 /**
- * 将工具中所有 data: URL 字段里的本地图片写入 IndexedDB（草稿缓存），
- * 并将 data: URL 替换为 __local_image:<id> 引用。
- * 返回更新后的字段。
+ * 将 data: URL 保存到 IndexedDB，返回 imageId（兼容旧调用）。
+ * @deprecated 请用 saveLocalImage() 返回 { id, edgeColor }
+ */
+export async function _saveLocalImage_legacy(dataUrl: string): Promise<string> {
+  return (await saveLocalImage(dataUrl)).id;
+}
+
+/**
+ * 将工具中所有图片字段（data:URL / 外链URL）写入 IndexedDB，
+ * 替换为 __local_image:<id> 引用。
+ * 外链会先下载再存本地。
  */
 export async function persistLocalImages(fields: {
   imageUrl?: string;
@@ -126,22 +181,46 @@ export async function persistLocalImages(fields: {
     screenshots: [...(fields.screenshots ?? [])],
   };
 
+  // imageUrl
   if (isLocalImage(results.imageUrl)) {
-    const id = await saveLocalImage(results.imageUrl);
+    const { id } = await saveLocalImage(results.imageUrl);
+    results.imageUrl = `__local_image:${id}`;
+  } else if (isExternalUrl(results.imageUrl)) {
+    const { id } = await fetchAndSaveExternalImage(results.imageUrl);
     results.imageUrl = `__local_image:${id}`;
   }
+
+  // screenshotLink
   if (isLocalImage(results.screenshotLink)) {
-    const id = await saveLocalImage(results.screenshotLink);
+    const { id } = await saveLocalImage(results.screenshotLink);
+    results.screenshotLink = `__local_image:${id}`;
+  } else if (isExternalUrl(results.screenshotLink)) {
+    const { id } = await fetchAndSaveExternalImage(results.screenshotLink);
     results.screenshotLink = `__local_image:${id}`;
   }
+
+  // screenshots
   for (let i = 0; i < results.screenshots.length; i++) {
-    if (isLocalImage(results.screenshots[i])) {
-      const id = await saveLocalImage(results.screenshots[i]);
+    const s = results.screenshots[i];
+    if (isLocalImage(s)) {
+      const { id } = await saveLocalImage(s);
+      results.screenshots[i] = `__local_image:${id}`;
+    } else if (isExternalUrl(s)) {
+      const { id } = await fetchAndSaveExternalImage(s);
       results.screenshots[i] = `__local_image:${id}`;
     }
   }
 
   return results;
+}
+
+/** 下载外链图片 → 存 IndexedDB，返回 { id, edgeColor } */
+async function fetchAndSaveExternalImage(url: string): Promise<{ id: string; edgeColor: string }> {
+  const apiUrl = `/api/fetch-image?url=${encodeURIComponent(url)}`;
+  const res = await fetch(apiUrl);
+  const json = await res.json() as { dataUrl?: string; error?: string };
+  if (!res.ok || !json.dataUrl) throw new Error(json.error ?? `HTTP ${res.status}`);
+  return saveLocalImage(json.dataUrl);
 }
 
 export function isLocalImage(value: string): boolean {
@@ -562,15 +641,17 @@ async function computeBlobHash(blob: Blob): Promise<string> {
 }
 
 /**
- * 将 IndexedDB 中的图片记录上传到 Vercel Blob。
+ * 将 IndexedDB 中的图片记录上传到 Vercel Blob，颜色编码进 URL query。
  *
  * 去重逻辑：
  * 1. 用内容哈希（SHA-256）查全局映射表 blob-url-map
- * 2. 已存在 → 直接返回已有 Blob URL（零上传）
- * 3. 不存在 → 上传 → 写入映射表
+ * 2. 已存在 → 直接返回已有 URL（含颜色）
+ * 3. 不存在 → 上传 → 写入映射表（含颜色）
+ *
+ * 返回 URL 格式：https://cdn.vercel-storage.com/xxx.png?bg=rgb(r,g,b)
  */
 async function uploadBlobFromIndexedDB(
-  img: { blob: Blob; mimeType: string },
+  img: { blob: Blob; mimeType: string; edgeColor?: string },
   prefix: string
 ): Promise<string> {
   const hash = await computeBlobHash(img.blob);
@@ -578,16 +659,23 @@ async function uploadBlobFromIndexedDB(
   // 查全局去重映射，已存在则复用
   const existing = await getBlobUrlByHash(hash);
   if (existing) {
-    console.log(`[去重] 已有相同图片，跳过上传: ${hash.slice(0, 8)}... → ${existing}`);
+    console.log(`[去重] 已有相同图片，跳过上传: ${hash.slice(0, 8)}...`);
     return existing;
   }
 
-  // 上传并记录映射
+  // 上传
   const ext = extFromMime(img.mimeType);
   const filename = `${prefix}-${hash.slice(0, 12)}.${ext}`;
   const file = new File([img.blob], filename, { type: img.mimeType });
-  const blobUrl = await uploadToBlob(file);
-  await setBlobUrlByHash(hash, blobUrl);
+  let blobUrl: string = await uploadToBlob(file);
+
+  // 颜色编码进 URL
+  const edgeColor = img.edgeColor ?? '#f1f5f9';
+  const bgParam = encodeURIComponent(edgeColor);
+  blobUrl = `${blobUrl}?bg=${bgParam}`;
+
+  // 写入映射表（含颜色）
+  await setBlobUrlByHash(hash, blobUrl, edgeColor);
 
   console.log(`[上传] 新图片已上传: ${hash.slice(0, 8)}... → ${blobUrl}`);
   return blobUrl;
