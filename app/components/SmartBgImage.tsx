@@ -16,6 +16,12 @@ interface SmartBgImageProps {
  * - 从 URL query 参数 (?bg=rgb(...)) 读取边缘颜色作为背景
  * - 图片居中，保持原比例
  * - 无颜色参数时使用默认灰色
+ *
+ * src 类型处理：
+ * - __local_image:<id>  → LocalImage 组件解析 IndexedDB
+ * - data: / blob:        → 直接原样使用（无 bg 参数）
+ * - http: / https:        → 解析 ?bg=rgb(...) 取背景色，pathname 作 src
+ * - 其他（相对路径等）  → 直接原样使用
  */
 export function SmartBgImage({
   src,
@@ -28,34 +34,44 @@ export function SmartBgImage({
   const [displaySrc, setDisplaySrc] = useState<string>('');
 
   useEffect(() => {
-    console.log('[SmartBgImage] src:', src, '| displaySrc:', displaySrc);
     if (!src) {
       setDisplaySrc('');
       setBgColor('#f1f5f9');
       return;
     }
 
-    // __local_image:<id> 本地引用：直接保留原值
+    // __local_image:<id> → LocalImage 解析 IndexedDB
     if (src.startsWith('__local_image:')) {
-      console.log('[SmartBgImage] local image path');
       setDisplaySrc(src);
       setBgColor('#f1f5f9');
       return;
     }
 
-    // 标准 URL：解析 ?bg=rgb(...) 并去掉 query
-    try {
-      const url = new URL(src);
-      const bg = url.searchParams.get('bg');
-      setBgColor(bg ? decodeURIComponent(bg) : '#f1f5f9');
-      setDisplaySrc(url.origin + url.pathname);
-      console.log('[SmartBgImage] URL path:', url.origin + url.pathname);
-    } catch {
-      // data: URL 等非标准格式
-      console.log('[SmartBgImage] fallback (data URL or other)');
+    // data: / blob: → 原样保留，不解析 URL（new URL() 会把 origin 变成 "null"）
+    if (src.startsWith('data:') || src.startsWith('blob:')) {
       setDisplaySrc(src);
       setBgColor('#f1f5f9');
+      return;
     }
+
+    // http: / https: → 正常解析 ?bg= 参数
+    if (src.startsWith('http:') || src.startsWith('https:')) {
+      try {
+        const url = new URL(src);
+        const bg = url.searchParams.get('bg');
+        setBgColor(bg ? decodeURIComponent(bg) : '#f1f5f9');
+        setDisplaySrc(url.origin + url.pathname);
+      } catch {
+        // URL 解析失败则原样保留
+        setDisplaySrc(src);
+        setBgColor('#f1f5f9');
+      }
+      return;
+    }
+
+    // 其他（相对路径等）→ 原样使用
+    setDisplaySrc(src);
+    setBgColor('#f1f5f9');
   }, [src]);
 
   // displaySrc 为空时不渲染任何 <img>
