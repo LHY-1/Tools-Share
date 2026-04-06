@@ -117,30 +117,36 @@ export default function AdminPage() {
     e.target.value = '';
   };
 
-  // 自动抓取快照
+  // 自动抓取快照（全页长截图）
   const handleAutoScreenshot = async () => {
-    const url = formData.downloadLinks?.[0] || formData.imageUrl;
-    if (!url) {
-      alert('请先填写下载链接或封面图链接');
+    // 使用用户填写的快照链接作为截图目标 URL
+    let targetUrl = formData.screenshotLink;
+    
+    // 如果快照链接为空，尝试从下载链接获取
+    if (!targetUrl && formData.downloadLinks?.length) {
+      targetUrl = formData.downloadLinks[0];
+    }
+    
+    if (!targetUrl) {
+      alert('请先填写要截图的网页 URL（可填在快照链接输入框中）');
       return;
     }
 
-    // 从 URL 提取域名
-    let targetUrl = url;
+    // 验证 URL 格式
     try {
-      const parsed = new URL(url);
-      targetUrl = parsed.origin; // 用域名首页截图
+      new URL(targetUrl);
     } catch {
-      // 如果不是完整 URL，直接用原值
+      alert('URL 格式无效，请填写完整的网页地址（如 https://example.com）');
+      return;
     }
 
     setScreenshotLoading(true);
     try {
-      // 1. 截图
+      // 1. 截图（fullPage: true 全页长截图）
       const res = await fetch('/api/screenshot', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: targetUrl, fullPage: false }),
+        body: JSON.stringify({ url: targetUrl, fullPage: true }),
       });
 
       if (!res.ok) {
@@ -1021,20 +1027,21 @@ export default function AdminPage() {
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">快照链接</label>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">快照（全页长截图）</label>
+                    <p className="text-xs text-slate-500 mb-2">输入网页 URL，点击「自动抓取」生成全页长截图；或直接粘贴图片 URL / 本地上传</p>
                     <div className="flex gap-2">
                       <input
                         type="text"
                         value={(formData.screenshotLink || '').startsWith('data:') ? '' : formData.screenshotLink || ''}
                         onChange={(e: ChangeEvent<HTMLInputElement>) => setFormData({ ...formData, screenshotLink: e.target.value })}
                         className="flex-1 px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                        placeholder="https://example.com/screenshot.png" />
+                        placeholder="https://example.com（输入网页 URL 或图片链接）" />
                       <button type="button" onClick={handleAutoScreenshot} disabled={screenshotLoading}
-                        className="px-3 py-2 bg-teal-600 hover:bg-teal-700 disabled:bg-teal-400 text-white rounded-lg transition-colors font-medium text-sm">
+                        className="px-3 py-2 bg-teal-600 hover:bg-teal-700 disabled:bg-teal-400 text-white rounded-lg transition-colors font-medium text-sm whitespace-nowrap">
                         {screenshotLoading ? '抓取中...' : '自动抓取'}
                       </button>
                       <button type="button" onClick={() => snapshotFileInputRef.current?.click()}
-                        className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors font-medium">
+                        className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors font-medium whitespace-nowrap">
                         本地上传
                       </button>
                       <input ref={snapshotFileInputRef} type="file" accept="image/*"
