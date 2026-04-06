@@ -6,9 +6,9 @@ import Link from 'next/link';
 import { Settings } from './Icons';
 import { loadToolsByMode } from '@/app/lib/data';
 import { getDataMode } from '@/app/lib/mode';
-import { LocalImage } from '@/app/lib/image-utils';
 import { toTool } from '@/app/types';
 import type { Tool, StoredTool } from '@/app/types';
+import { SmartBgImage } from './SmartBgImage';
 
 const DEFAULT_CATEGORIES = ['开发工具', '设计工具', '工作效率', '文档管理', '其他工具'];
 
@@ -203,19 +203,11 @@ export default function HomePage() {
             {filteredTools.map((tool) => (
               <Link key={tool.id} href={`/tools/${tool.id}`}>
                 <div className="group bg-white rounded-xl border border-slate-200 hover:border-slate-300 hover:shadow-md transition-all overflow-hidden cursor-pointer h-full flex flex-col">
-                  {tool.imageUrl ? (
-                    <div className="aspect-video bg-slate-100 overflow-hidden flex items-center justify-center">
-                      <LocalImage
-                        src={tool.imageUrl}
-                        alt={tool.name}
-                        className="max-w-full max-h-full object-contain group-hover:scale-105 transition-transform duration-300"
-                      />
-                    </div>
-                  ) : (
-                    <div className="aspect-video bg-slate-100 flex items-center justify-center">
-                      <span className="text-slate-400 text-4xl font-bold">{tool.name?.[0] ?? '?'}</span>
-                    </div>
-                  )}
+                  <SmartBgImage
+                    src={tool.imageUrl}
+                    alt={tool.name}
+                    imgClassName="group-hover:scale-105"
+                  />
                   <div className="p-4 flex flex-col flex-1">
                     <h3 className="font-semibold text-slate-900 group-hover:text-slate-700 line-clamp-1">
                       {tool.name}

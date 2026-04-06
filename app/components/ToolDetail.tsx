@@ -10,6 +10,7 @@ import rehypeRaw from 'rehype-raw';
 import { loadToolsByMode } from '@/app/lib/data';
 import { getDataMode } from '@/app/lib/mode';
 import type { Tool } from '@/app/types';
+import { SmartBgImage } from './SmartBgImage';
 
 /**
  * 工具详情页
@@ -154,19 +155,13 @@ export default function ToolDetail({ toolId }: { toolId: string }) {
       <div className="max-w-4xl mx-auto px-4 py-8">
         <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
           {/* 封面图 */}
-          {tool.imageUrl ? (
-            <div className="aspect-video bg-slate-100 overflow-hidden flex items-center justify-center cursor-zoom-in" onClick={() => openLightbox(tool.imageUrl!)}>
-              <img
-                src={tool.imageUrl}
-                alt={tool.name}
-                className="max-w-full max-h-full object-contain hover:scale-105 transition-transform duration-300"
-              />
-            </div>
-          ) : (
-            <div className="aspect-video bg-gradient-to-br from-slate-100 to-slate-200 flex items-center justify-center">
-              <span className="text-slate-400 text-6xl font-bold">{tool.name[0]}</span>
-            </div>
-          )}
+          <div className="cursor-zoom-in" onClick={() => tool.imageUrl && openLightbox(tool.imageUrl)}>
+            <SmartBgImage
+              src={tool.imageUrl}
+              alt={tool.name}
+              imgClassName="hover:scale-105"
+            />
+          </div>
 
           <div className="p-6 md:p-8">
             {/* 标题 + 分类 */}
