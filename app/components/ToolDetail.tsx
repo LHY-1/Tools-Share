@@ -250,12 +250,29 @@ export default function ToolDetail({ toolId }: { toolId: string }) {
             {/* 完整描述 */}
             {tool.fullDescription && (
               <div className="mb-8">
-                <h2 className="text-lg font-semibold text-slate-900 mb-3">详细介绍</h2>
+                <div className="flex items-center justify-between mb-3">
+                  <h2 className="text-lg font-semibold text-slate-900">详细介绍</h2>
+                  <Link href={`/admin?edit=${tool.id}`}>
+                    <button className="text-sm text-blue-600 hover:text-blue-700 font-medium">
+                      编辑
+                    </button>
+                  </Link>
+                </div>
                 <div className="prose prose-slate max-w-none">
                   <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>
                     {tool.fullDescription}
                   </ReactMarkdown>
                 </div>
+              </div>
+            )}
+            {!tool.fullDescription && (
+              <div className="mb-8 p-4 bg-slate-50 rounded-lg text-center">
+                <p className="text-slate-400 text-sm mb-2">暂无详细介绍</p>
+                <Link href={`/admin?edit=${tool.id}`}>
+                  <button className="text-sm text-blue-600 hover:text-blue-700 font-medium">
+                    添加详细介绍
+                  </button>
+                </Link>
               </div>
             )}
           </div>

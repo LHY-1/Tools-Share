@@ -915,6 +915,17 @@ export default function AdminPage() {
                     )}
                   </div>
 
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">详细介绍（Markdown）</label>
+                    <textarea
+                      value={formData.fullDescription || ''}
+                      onChange={(e) => setFormData({ ...formData, fullDescription: e.target.value })}
+                      rows={6}
+                      className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 font-mono text-sm"
+                      placeholder="支持 Markdown 格式的详细介绍..."
+                    />
+                  </div>
+
                   <div className="flex gap-3 pt-4">
                     <button type="submit" disabled={isSaving}
                       className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white rounded-lg transition-colors font-medium flex items-center justify-center gap-2">
