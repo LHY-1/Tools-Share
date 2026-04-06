@@ -38,7 +38,7 @@ export default function AdminPage() {
   const [draggedId, setDraggedId] = useState<string | null>(null);
 
   const [tools, setTools] = useState<Tool[]>([]);
-  const [categories, setCategories] = useState<string[]>(DEFAULT_CATEGORIES);
+  const [categories, setCategories] = useState<string[]>([]);
   const [categoriesInitialized, setCategoriesInitialized] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -119,6 +119,9 @@ export default function AdminPage() {
         const savedCategories = await loadCategories();
         if (savedCategories && savedCategories.length > 0) {
           setCategories(savedCategories);
+        } else {
+          // 首次使用，设默认分类
+          setCategories(DEFAULT_CATEGORIES);
         }
         setCategoriesInitialized(true); // 标记初始化完成
       } catch (error) {
@@ -729,6 +732,9 @@ export default function AdminPage() {
                   <Plus className="w-4 h-4" />
                 </button>
               </div>
+              {categories.length === 0 ? (
+                <div className="text-sm text-slate-400 py-4 text-center">加载中...</div>
+              ) : (
               <div className="space-y-2">
                 {categories.map((category, index) => (
                   <div key={category} className="flex items-center justify-between p-3 bg-slate-50 rounded-lg">
@@ -760,6 +766,7 @@ export default function AdminPage() {
                   </div>
                 ))}
               </div>
+              )}
             </div>
 
             {/* 预览切换 */}
