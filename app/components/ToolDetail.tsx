@@ -26,9 +26,14 @@ export default function ToolDetail({ toolId }: { toolId: string }) {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [lightboxImage, setLightboxImage] = useState('');
+  const [isFromAdmin, setIsFromAdmin] = useState(false);
 
   useEffect(() => {
     loadFromLocal();
+    // 判断来源：只有从 /admin 页面来的才显示编辑按钮
+    if (typeof window !== 'undefined') {
+      setIsFromAdmin(document.referrer.includes('/admin'));
+    }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [toolId]);
 
@@ -124,14 +129,16 @@ export default function ToolDetail({ toolId }: { toolId: string }) {
             <ChevronLeft className="w-4 h-4" />
             返回
           </button>
-          <Link href={`/admin?edit=${tool.id}`}>
-            <button className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-900 hover:bg-slate-700 text-white text-sm rounded-lg transition-colors">
-              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-              </svg>
-              管理编辑
-            </button>
-          </Link>
+          {isFromAdmin && (
+            <Link href={`/admin?edit=${tool.id}`}>
+              <button className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-900 hover:bg-slate-700 text-white text-sm rounded-lg transition-colors">
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                </svg>
+                管理编辑
+              </button>
+            </Link>
+          )}
         </div>
       </header>
 

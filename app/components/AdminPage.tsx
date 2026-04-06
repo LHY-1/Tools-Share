@@ -88,10 +88,12 @@ export default function AdminPage() {
         }
 
         if (loadedTools.length === 0) {
-          const saved = localStorage.getItem('tools');
-          if (saved) {
-            loadedTools = JSON.parse(saved);
-            await saveTools(loadedTools);
+          if (typeof window !== 'undefined') {
+            const saved = localStorage.getItem('tools');
+            if (saved) {
+              loadedTools = JSON.parse(saved);
+              await saveTools(loadedTools);
+            }
           }
         }
 
@@ -110,12 +112,17 @@ export default function AdminPage() {
 
         setTools(mapped.map((t) => toTool(t)));
 
-        const savedCategories = localStorage.getItem('categories');
-        if (savedCategories) {
-          try {
-            setCategories(JSON.parse(savedCategories));
-          } catch (e) {
-            console.error('加载分类失败:', e);
+        if (typeof window !== 'undefined') {
+          const savedCategories = localStorage.getItem('categories');
+          if (savedCategories) {
+            try {
+              const parsed = JSON.parse(savedCategories);
+              if (Array.isArray(parsed) && parsed.length > 0) {
+                setCategories(parsed);
+              }
+            } catch (e) {
+              console.error('加载分类失败:', e);
+            }
           }
         }
       } catch (error) {
