@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, type ChangeEvent } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { Tool, StoredTool, CreateToolInput, toTool } from '@/app/types';
 import { Trash2, Edit2, Plus, Eye, EyeOff, GripVertical, Upload, Download, CheckCircle, AlertCircle } from './Icons';
 import Link from 'next/link';
@@ -12,6 +13,7 @@ import { materializeToolImagesToCloud, LocalImage } from '@/app/lib/image-utils'
 const DEFAULT_CATEGORIES = ['开发工具', '设计工具', '工作效率', '文档管理', '其他工具'];
 
 export default function AdminPage() {
+  const searchParams = useSearchParams();
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [showPreview, setShowPreview] = useState(true);
@@ -124,6 +126,30 @@ export default function AdminPage() {
 
     initLoad();
   }, []);
+
+  // 从详情页跳转过来时自动打开编辑
+  useEffect(() => {
+    const editId = searchParams.get('edit');
+    if (!editId || tools.length === 0) return;
+    const tool = tools.find((t) => t.id === editId);
+    if (!tool) return;
+    setEditingId(editId);
+    setFormData({
+      name: tool.name,
+      description: tool.description ?? '',
+      categories: tool.categories ?? [DEFAULT_CATEGORIES[0]],
+      imageUrl: tool.imageUrl ?? '',
+      downloadLinks: tool.downloadLinks ?? [],
+      downloadLinkLabels: tool.downloadLinkLabels ?? [],
+      screenshotLink: tool.screenshotLink ?? '',
+      screenshots: tool.screenshots ?? [],
+    });
+    setShowForm(true);
+    // 清理 URL 参数
+    const url = new URL(window.location.href);
+    url.searchParams.delete('edit');
+    window.history.replaceState({}, '', url.toString());
+  }, [searchParams, tools]);
 
   useEffect(() => {
     if (typeof window !== 'undefined' && tools.length > 0) {

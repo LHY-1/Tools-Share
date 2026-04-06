@@ -116,7 +116,7 @@ export default function ToolDetail({ toolId }: { toolId: string }) {
 
       {/* Header */}
       <header className="bg-white border-b border-slate-200 sticky top-0 z-30">
-        <div className="max-w-4xl mx-auto px-4 py-4">
+        <div className="max-w-4xl mx-auto px-4 py-4 flex items-center justify-between">
           <button
             onClick={() => router.back()}
             className="flex items-center gap-1 text-slate-600 hover:text-slate-900 text-sm"
@@ -124,6 +124,14 @@ export default function ToolDetail({ toolId }: { toolId: string }) {
             <ChevronLeft className="w-4 h-4" />
             返回
           </button>
+          <Link href={`/admin?edit=${tool.id}`}>
+            <button className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-900 hover:bg-slate-700 text-white text-sm rounded-lg transition-colors">
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+              </svg>
+              管理编辑
+            </button>
+          </Link>
         </div>
       </header>
 
