@@ -34,6 +34,7 @@ export default function AdminPage() {
   const [editingCategoryName, setEditingCategoryName] = useState('');
   const [newDownloadLink, setNewDownloadLink] = useState('');
   const [newDownloadLinkLabel, setNewDownloadLinkLabel] = useState('');
+  const [customDownloadLinkLabel, setCustomDownloadLinkLabel] = useState('');
   const [newScreenshotUrl, setNewScreenshotUrl] = useState('');
   const [newScreenshotLabel, setNewScreenshotLabel] = useState('');
   const [newToolCategory, setNewToolCategory] = useState('');
@@ -584,13 +585,17 @@ export default function AdminPage() {
 
   const handleAddDownloadLink = () => {
     if (!newDownloadLink.trim()) return;
+    const label = newDownloadLinkLabel === '__custom__'
+      ? customDownloadLinkLabel.trim()
+      : newDownloadLinkLabel;
     setFormData((prev) => ({
       ...prev,
       downloadLinks: [...prev.downloadLinks, newDownloadLink.trim()],
-      downloadLinkLabels: [...(prev.downloadLinkLabels || []), newDownloadLinkLabel.trim() || `版本 ${prev.downloadLinks.length + 1}`],
+      downloadLinkLabels: [...(prev.downloadLinkLabels || []), label || `版本 ${prev.downloadLinks.length + 1}`],
     }));
     setNewDownloadLink('');
     setNewDownloadLinkLabel('');
+    setCustomDownloadLinkLabel('');
   };
 
   const handleRemoveDownloadLink = (index: number) => {
@@ -1014,36 +1019,36 @@ export default function AdminPage() {
                         </div>
                       ))}
                     </div>
-                    {/* 预设标签快捷按钮 */}
-                    <div className="flex gap-2 flex-wrap mb-2">
-                      {['百度网盘', '夸克云盘', '阿里云盘', ...(dataMode === 'local' ? ['本地链接'] : []), '第三方链接'].map((label) => (
-                        <button key={label} type="button"
-                          onClick={() => setNewDownloadLinkLabel(label)}
-                          className={`px-3 py-1.5 rounded-full text-sm border transition-colors ${
-                            newDownloadLinkLabel === label
-                              ? 'bg-blue-600 text-white border-blue-600'
-                              : 'bg-white text-slate-700 border-slate-300 hover:border-blue-400 hover:text-blue-600'
-                          }`}>
-                          {label}
-                        </button>
-                      ))}
-                    </div>
-                    <div className="flex gap-2 flex-wrap items-center">
-                      {newDownloadLinkLabel && newDownloadLinkLabel !== '第三方链接' ? (
-                        <span className="px-3 py-2 bg-blue-50 text-blue-700 border border-blue-200 rounded-lg text-sm font-medium min-w-[100px] text-center">
+                    {/* 标签下拉 + URL + 添加 */}
+                    <div className="flex gap-2 items-center">
+                      <select value={newDownloadLinkLabel} onChange={(e) => setNewDownloadLinkLabel(e.target.value)}
+                        className="px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white min-w-[120px]">
+                        <option value="">选择标签</option>
+                        <option value="官方链接">官方链接</option>
+                        <option value="百度网盘">百度网盘</option>
+                        <option value="夸克云盘">夸克云盘</option>
+                        <option value="阿里云盘">阿里云盘</option>
+                        {dataMode === 'local' && <option value="本地链接">本地链接</option>}
+                        <option value="第三方链接">第三方链接</option>
+                        <option value="__custom__">自定义...</option>
+                      </select>
+                      {newDownloadLinkLabel === '__custom__' && (
+                        <input type="text" value={customDownloadLinkLabel}
+                          onChange={(e) => setCustomDownloadLinkLabel(e.target.value)}
+                          onFocus={() => setNewDownloadLinkLabel('__custom__')}
+                          className="w-36 px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                          placeholder="自定义标签" autoFocus />
+                      )}
+                      {newDownloadLinkLabel && newDownloadLinkLabel !== '__custom__' && (
+                        <span className="px-2 py-1 bg-blue-50 text-blue-700 border border-blue-200 rounded text-xs font-medium">
                           {newDownloadLinkLabel}
                         </span>
-                      ) : (
-                        <input type="text" value={newDownloadLinkLabel}
-                          onChange={(e) => setNewDownloadLinkLabel(e.target.value)}
-                          className="w-36 px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
-                          placeholder="自定义标签" />
                       )}
                       <input type="url" value={newDownloadLink} onChange={(e) => setNewDownloadLink(e.target.value)}
                         className="flex-1 min-w-[200px] px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                         placeholder="https://example.com/download" />
                       <button type="button" onClick={handleAddDownloadLink}
-                        className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors">添加</button>
+                        className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors shrink-0">添加</button>
                     </div>
                   </div>
 
