@@ -39,6 +39,7 @@ export default function AdminPage() {
 
   const [tools, setTools] = useState<Tool[]>([]);
   const [categories, setCategories] = useState<string[]>(DEFAULT_CATEGORIES);
+  const [categoriesInitialized, setCategoriesInitialized] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
 
   // 图片上传
@@ -119,6 +120,7 @@ export default function AdminPage() {
         if (savedCategories && savedCategories.length > 0) {
           setCategories(savedCategories);
         }
+        setCategoriesInitialized(true); // 标记初始化完成
       } catch (error) {
         console.error('初始化加载失败:', error);
       }
@@ -164,10 +166,11 @@ export default function AdminPage() {
   }, [tools]);
 
   useEffect(() => {
-    if (categories.length > 0) {
+    // 只有初始化完成后才保存，避免初始加载覆盖 IndexedDB
+    if (categoriesInitialized && categories.length > 0) {
       saveCategories(categories).catch(console.error);
     }
-  }, [categories]);
+  }, [categories, categoriesInitialized]);
 
   const [cloudLoading, setCloudLoading] = useState(false);
   const [cloudStatus, setCloudStatus] = useState<string>('');
