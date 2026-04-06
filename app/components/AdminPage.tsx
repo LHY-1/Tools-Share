@@ -70,12 +70,67 @@ export default function AdminPage() {
     e.target.value = '';
   };
 
+  // 自动抓取快照
+  const handleAutoScreenshot = async () => {
+    const url = formData.downloadLinks?.[0] || formData.imageUrl;
+    if (!url) {
+      alert('请先填写下载链接或封面图链接');
+      return;
+    }
+
+    // 从 URL 提取域名
+    let targetUrl = url;
+    try {
+      const parsed = new URL(url);
+      targetUrl = parsed.origin; // 用域名首页截图
+    } catch {
+      // 如果不是完整 URL，直接用原值
+    }
+
+    setScreenshotLoading(true);
+    try {
+      // 1. 截图
+      const res = await fetch('/api/screenshot', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: targetUrl, fullPage: false }),
+      });
+
+      if (!res.ok) {
+        throw new Error('截图失败');
+      }
+
+      const blob = await res.blob();
+      const file = new File([blob], `screenshot-${Date.now()}.png`, { type: 'image/png' });
+
+      // 2. 上传到 Blob
+      const uploadForm = new FormData();
+      uploadForm.append('file', file);
+      const uploadRes = await fetch('/api/upload-image', {
+        method: 'POST',
+        body: uploadForm,
+      });
+
+      if (!uploadRes.ok) {
+        throw new Error('上传失败');
+      }
+
+      const { url: blobUrl } = await uploadRes.json();
+      setFormData((prev) => ({ ...prev, screenshotLink: blobUrl }));
+    } catch (err: any) {
+      alert(`抓取失败: ${err.message}`);
+    } finally {
+      setScreenshotLoading(false);
+    }
+  };
+
   // 导入结果提示
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
   const [importModalOpen, setImportModalOpen] = useState(false);
   const [importLoading, setImportLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [saveStatus, setSaveStatus] = useState<string>('');
+  const [screenshotLoading, setScreenshotLoading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -903,6 +958,10 @@ export default function AdminPage() {
                         onChange={(e: ChangeEvent<HTMLInputElement>) => setFormData({ ...formData, screenshotLink: e.target.value })}
                         className="flex-1 px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                         placeholder="https://example.com/screenshot.png" />
+                      <button type="button" onClick={handleAutoScreenshot} disabled={screenshotLoading}
+                        className="px-3 py-2 bg-teal-600 hover:bg-teal-700 disabled:bg-teal-400 text-white rounded-lg transition-colors font-medium text-sm">
+                        {screenshotLoading ? '抓取中...' : '自动抓取'}
+                      </button>
                       <button type="button" onClick={() => snapshotFileInputRef.current?.click()}
                         className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors font-medium">
                         本地上传
