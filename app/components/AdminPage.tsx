@@ -534,7 +534,9 @@ export default function AdminPage() {
   const handleAddCategory = () => {
     if (!newCategory.trim()) { alert('请输入分类名称'); return; }
     if (categories.includes(newCategory.trim())) { alert('分类已存在'); return; }
-    setCategories([...categories, newCategory.trim()]);
+    const next = [...categories, newCategory.trim()];
+    setCategories(next);
+    saveCategories(next).catch(console.error);
     setNewCategory('');
     setShowCategoryForm(false);
   };
@@ -550,6 +552,7 @@ export default function AdminPage() {
       const newCategories = [...categories];
       newCategories[editingCategoryId] = editingCategoryName.trim();
       setCategories(newCategories);
+      saveCategories(newCategories).catch(console.error);
       setEditingCategoryId(null);
       setEditingCategoryName('');
     }
@@ -561,6 +564,7 @@ export default function AdminPage() {
       const categoryToDelete = categories[index];
       const newCategories = categories.filter((_, i) => i !== index);
       setCategories(newCategories);
+      saveCategories(newCategories).catch(console.error);
       setTools(
         tools.map((t) =>
           t.categories?.includes(categoryToDelete)
