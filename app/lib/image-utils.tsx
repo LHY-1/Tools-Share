@@ -552,14 +552,21 @@ export function LocalImage({
       return;
     }
     const id = src.replace('__local_image:', '');
+    console.log('[LocalImage] loading id:', id);
     loadImage(id)
       .then((img) => {
+        console.log('[LocalImage] loadImage result:', img ? `found blob=${img.blob.size}b` : 'null');
         if (!img) return;
         const reader = new FileReader();
-        reader.onload = () => setResolved(reader.result as string);
+        reader.onload = () => {
+          console.log('[LocalImage] FileReader done, dataUrl len:', (reader.result as string).length);
+          setResolved(reader.result as string);
+        };
         reader.readAsDataURL(img.blob);
       })
-      .catch(() => {});
+      .catch((e) => {
+        console.error('[LocalImage] loadImage error:', e);
+      });
   }, [src]);
 
   if (!resolved) return null;
