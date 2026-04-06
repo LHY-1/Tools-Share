@@ -458,12 +458,12 @@ export function LocalImage({
   src,
   alt,
   ...imgProps
-}: React.ImgHTMLAttributes<HTMLImageElement> & { src: string; alt: string }) {
-  const [resolved, setResolved] = useState(src);
+}: React.ImgHTMLAttributes<HTMLImageElement> & { src?: string; alt?: string }) {
+  const [resolved, setResolved] = useState(src ?? '');
 
   useEffect(() => {
-    if (!src.startsWith('__local_image:')) {
-      setResolved(src);
+    if (!src || !src.startsWith('__local_image:')) {
+      setResolved(src ?? '');
       return;
     }
     const id = src.replace('__local_image:', '');
@@ -477,7 +477,7 @@ export function LocalImage({
       .catch(() => {});
   }, [src]);
 
-  return <img src={resolved} alt={alt} {...imgProps} />;
+  return <img src={resolved} alt={alt ?? ''} {...imgProps} />;
 }
 
 // ─── 云端同步：图片实化 ────────────────────────────────────────────────────────
