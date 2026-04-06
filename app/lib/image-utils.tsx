@@ -538,11 +538,17 @@ export function LocalImage({
   alt,
   ...imgProps
 }: React.ImgHTMLAttributes<HTMLImageElement> & { src?: string; alt?: string }) {
-  const [resolved, setResolved] = useState(src ?? '');
+  // 初始为空，让 useEffect 先执行，避免首次 render 时 src="__local_image:xxx" 导致 <img src=""> 错误
+  const [resolved, setResolved] = useState('');
 
   useEffect(() => {
-    if (!src || !src.startsWith('__local_image:')) {
-      setResolved(src ?? '');
+    if (!src) {
+      setResolved('');
+      return;
+    }
+    if (!src.startsWith('__local_image:')) {
+      // 普通 URL（Blob URL / 外链 / data:）
+      setResolved(src);
       return;
     }
     const id = src.replace('__local_image:', '');
