@@ -17,6 +17,7 @@ export default function HomePage() {
   const [categories, setCategories] = useState<string[]>(DEFAULT_CATEGORIES);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [isOffline, setIsOffline] = useState(false);
 
   useEffect(() => {
     setMounted(true);
@@ -27,12 +28,15 @@ export default function HomePage() {
   async function loadFromCloud() {
     setLoading(true);
     setLoadError(null);
-    const cloudTools = await fetchCloudTools();
-    if (!cloudTools) {
+    setIsOffline(false);
+    const result = await fetchCloudTools();
+    if (!result) {
       setLoadError('无法连接云端，请检查网络');
       setLoading(false);
       return;
     }
+    const cloudTools = result.data;
+    if (result.isOffline) setIsOffline(true);
     if (cloudTools.length === 0) {
       setLoadError(null);
       setTools([]);
@@ -99,7 +103,15 @@ export default function HomePage() {
           <div className="flex items-center justify-between">
             <div>
               <h1 className="text-3xl font-bold text-slate-900">工具库</h1>
-              <p className="text-slate-600 text-sm mt-0.5">发现高效工具，提升工作效率</p>
+              <p className="text-slate-600 text-sm mt-0.5">
+                发现高效工具，提升工作效率
+                {isOffline && (
+                  <span className="ml-2 inline-flex items-center gap-1 px-2 py-0.5 rounded bg-amber-100 text-amber-700 text-xs">
+                    <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+                    离线缓存
+                  </span>
+                )}
+              </p>
             </div>
             <div className="flex items-center gap-3">
               {/* 刷新按钮 */}

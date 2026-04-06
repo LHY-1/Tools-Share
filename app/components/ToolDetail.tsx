@@ -34,13 +34,13 @@ export default function ToolDetail({ toolId }: { toolId: string }) {
   async function loadFromCloud() {
     setLoading(true);
     setLoadError(null);
-    const cloudTools = await fetchCloudTools();
-    if (!cloudTools) {
+    const result = await fetchCloudTools();
+    if (!result) {
       setLoadError('无法连接云端，请检查网络');
       setLoading(false);
       return;
     }
-    const found = cloudTools.find((t) => t.id === toolId);
+    const found = result.data.find((t) => t.id === toolId);
     if (!found) {
       setLoadError('未找到该工具');
       setLoading(false);
