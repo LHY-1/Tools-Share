@@ -236,14 +236,20 @@ export default function AdminPage() {
 
         setTools(mapped.map((t) => toTool(t)));
 
-        // 从 IndexedDB 加载分类
-        const savedCategories = await loadCategories();
-        if (savedCategories && savedCategories.length > 0) {
-          setCategories(savedCategories);
-        } else {
-          // 首次使用，设默认分类
-          setCategories(DEFAULT_CATEGORIES);
+        // 云端模式优先从云端取分类，本地模式从 IndexedDB 取
+        let loadedCategories: string[] = [];
+        if (mode === 'cloud') {
+          const cloudCats = await loadCloudCategories();
+          if (cloudCats && cloudCats.length > 0) {
+            loadedCategories = cloudCats;
+            await saveCategories(cloudCats); // 同步到本地
+          }
         }
+        if (loadedCategories.length === 0) {
+          const savedCategories = await loadCategories();
+          loadedCategories = savedCategories && savedCategories.length > 0 ? savedCategories : DEFAULT_CATEGORIES;
+        }
+        setCategories(loadedCategories);
         setCategoriesInitialized(true); // 标记初始化完成
       } catch (error) {
         console.error('初始化加载失败:', error);
