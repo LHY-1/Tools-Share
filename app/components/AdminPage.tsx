@@ -454,10 +454,11 @@ export default function AdminPage() {
             ? {
                 ...t,
                 ...normalizedData,
-                fullDescription: existingTool?.fullDescription || '',
-                features: existingTool?.features || [],
-                screenshots: existingTool?.screenshots || [],
-                usage: existingTool?.usage || '',
+                fullDescription: formData.fullDescription || '',
+                features: formData.features || [],
+                screenshots: formData.screenshots || [],
+                screenshotLabels: formData.screenshotLabels || [],
+                usage: formData.usage || '',
                 updatedAt: new Date(),
               }
             : t
