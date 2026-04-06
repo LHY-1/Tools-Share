@@ -23,6 +23,8 @@ export default function AdminPage() {
   const [editingCategoryName, setEditingCategoryName] = useState('');
   const [newDownloadLink, setNewDownloadLink] = useState('');
   const [newDownloadLinkLabel, setNewDownloadLinkLabel] = useState('');
+  const [newScreenshotUrl, setNewScreenshotUrl] = useState('');
+  const [newScreenshotLabel, setNewScreenshotLabel] = useState('');
   const [newToolCategory, setNewToolCategory] = useState('');
 
   const [formData, setFormData] = useState<CreateToolInput>({
@@ -77,31 +79,27 @@ export default function AdminPage() {
     if (!files || files.length === 0) return;
 
     const existing = formData.screenshots || [];
-    const newScreenshots: string[] = [];
+    const existingLabels = formData.screenshotLabels || [];
+    let loaded = 0;
 
-    Array.from(files).forEach((file) => {
+    Array.from(files).forEach((file, idx) => {
       const reader = new FileReader();
       reader.onload = (ev) => {
         const base64 = ev.target?.result as string;
-        newScreenshots.push(base64);
-        // 全部读完再更新 state
-        if (newScreenshots.length === files.length) {
+        existing.push(base64);
+        existingLabels.push(file.name.replace(/\.[^.]+$/, '').slice(0, 20) || `截图 ${existing.length}`);
+        loaded++;
+        if (loaded === files.length) {
           setFormData((prev) => ({
             ...prev,
-            screenshots: [...(prev.screenshots || []), ...newScreenshots],
+            screenshots: [...existing],
+            screenshotLabels: [...existingLabels],
           }));
         }
       };
       reader.readAsDataURL(file);
     });
     e.target.value = '';
-  };
-
-  const removeScreenshot = (idx: number) => {
-    setFormData((prev) => ({
-      ...prev,
-      screenshots: (prev.screenshots || []).filter((_, i) => i !== idx),
-    }));
   };
 
   // 自动抓取快照
@@ -1020,22 +1018,53 @@ export default function AdminPage() {
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">工具截图（可多张）</label>
-                    <div className="flex flex-wrap gap-2 mb-2">
+                    <label className="block text-sm font-medium text-slate-700 mb-1">工具截图</label>
+                    {/* 已添加的截图列表 */}
+                    <div className="space-y-2 mb-3">
                       {(formData.screenshots || []).map((src, idx) => (
-                        <div key={idx} className="relative w-24 h-24 border rounded-lg overflow-hidden group">
-                          <img src={src} alt={`截图${idx + 1}`} className="w-full h-full object-cover" />
-                          <button type="button" onClick={() => removeScreenshot(idx)}
-                            className="absolute top-1 right-1 w-5 h-5 bg-red-500 text-white rounded-full text-xs opacity-0 group-hover:opacity-100 transition-opacity">
-                            ×
+                        <div key={idx} className="flex items-center gap-2 bg-slate-50 p-3 rounded-lg">
+                          <img src={src} alt={`截图${idx + 1}`} className="w-16 h-16 object-cover rounded" />
+                          <input type="text" value={formData.screenshotLabels?.[idx] || ''}
+                            onChange={(e) => {
+                              const labels = [...(formData.screenshotLabels || [])];
+                              labels[idx] = e.target.value;
+                              setFormData({ ...formData, screenshotLabels: labels });
+                            }}
+                            className="w-28 px-2 py-1 text-xs border border-slate-300 rounded focus:ring-1 focus:ring-blue-500"
+                            placeholder={`截图 ${idx + 1}`} />
+                          <span className="flex-1 text-xs text-slate-500 truncate">{src.slice(0, 50)}...</span>
+                          <button type="button" onClick={() => {
+                            const shots = (formData.screenshots || []).filter((_, i) => i !== idx);
+                            const labels = (formData.screenshotLabels || []).filter((_, i) => i !== idx);
+                            setFormData({ ...formData, screenshots: shots, screenshotLabels: labels });
+                          }} className="text-red-600 hover:text-red-700 p-1">
+                            <Trash2 className="w-4 h-4" />
                           </button>
                         </div>
                       ))}
                     </div>
-                    <div className="flex gap-2">
+                    {/* 添加新截图 */}
+                    <div className="flex gap-2 flex-wrap">
+                      <input type="text" value={newScreenshotLabel} onChange={(e) => setNewScreenshotLabel(e.target.value)}
+                        className="w-32 px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                        placeholder="标签" />
+                      <input type="url" value={newScreenshotUrl} onChange={(e) => setNewScreenshotUrl(e.target.value)}
+                        className="flex-1 min-w-[200px] px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                        placeholder="https://example.com/screenshot.png" />
+                      <button type="button" onClick={() => {
+                        if (newScreenshotUrl.trim()) {
+                          setFormData({
+                            ...formData,
+                            screenshots: [...(formData.screenshots || []), newScreenshotUrl.trim()],
+                            screenshotLabels: [...(formData.screenshotLabels || []), newScreenshotLabel.trim() || `截图 ${(formData.screenshots?.length || 0) + 1}`],
+                          });
+                          setNewScreenshotUrl('');
+                          setNewScreenshotLabel('');
+                        }
+                      }} className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors">添加链接</button>
                       <button type="button" onClick={() => screenshotsInputRef.current?.click()}
                         className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors font-medium text-sm">
-                        上传截图
+                        本地上传
                       </button>
                       <input ref={screenshotsInputRef} type="file" accept="image/*" multiple
                         onChange={handleScreenshotsUpload} className="hidden" />

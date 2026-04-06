@@ -13,6 +13,7 @@ export interface Tool {
   fullDescription?: string;
   features?: string[];
   screenshots?: string[];
+  screenshotLabels?: string[];
   usage?: string;
   // 关联的本地图片 ID（用于导出/导入）
   imageIds?: string[];
@@ -29,12 +30,13 @@ export interface StoredTool {
   downloadLinks?: string[];
   downloadLinkLabels?: string[];
   screenshotLink?: string;
+  screenshots?: string[];
+  screenshotLabels?: string[];
   createdAt: string | Date;
   updatedAt: string | Date;
   order?: number;
   fullDescription?: string;
   features?: string[];
-  screenshots?: string[];
   usage?: string;
   imageIds?: string[];
 }
@@ -54,6 +56,7 @@ export interface CreateToolInput {
   downloadLinkLabels?: string[];
   screenshotLink?: string;
   screenshots?: string[];
+  screenshotLabels?: string[];
   fullDescription?: string;
   features?: string[];
   usage?: string;
@@ -82,6 +85,7 @@ export function toTool(data: StoredTool): Tool {
     fullDescription: data.fullDescription,
     features: data.features,
     screenshots: data.screenshots,
+    screenshotLabels: data.screenshotLabels,
     usage: data.usage,
     imageIds: data.imageIds,
   };
