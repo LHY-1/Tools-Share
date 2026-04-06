@@ -28,6 +28,7 @@ export function SmartBgImage({
   const [displaySrc, setDisplaySrc] = useState<string>('');
 
   useEffect(() => {
+    console.log('[SmartBgImage] src:', src, '| displaySrc:', displaySrc);
     if (!src) {
       setDisplaySrc('');
       setBgColor('#f1f5f9');
@@ -36,6 +37,7 @@ export function SmartBgImage({
 
     // __local_image:<id> 本地引用：直接保留原值
     if (src.startsWith('__local_image:')) {
+      console.log('[SmartBgImage] local image path');
       setDisplaySrc(src);
       setBgColor('#f1f5f9');
       return;
@@ -47,8 +49,10 @@ export function SmartBgImage({
       const bg = url.searchParams.get('bg');
       setBgColor(bg ? decodeURIComponent(bg) : '#f1f5f9');
       setDisplaySrc(url.origin + url.pathname);
+      console.log('[SmartBgImage] URL path:', url.origin + url.pathname);
     } catch {
       // data: URL 等非标准格式
+      console.log('[SmartBgImage] fallback (data URL or other)');
       setDisplaySrc(src);
       setBgColor('#f1f5f9');
     }
