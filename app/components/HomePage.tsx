@@ -196,7 +196,7 @@ export default function HomePage() {
                     </div>
                   ) : (
                     <div className="aspect-video bg-slate-100 flex items-center justify-center">
-                      <span className="text-slate-400 text-4xl font-bold">{tool.name[0]}</span>
+                      <span className="text-slate-400 text-4xl font-bold">{tool.name?.[0] ?? '?'}</span>
                     </div>
                   )}
                   <div className="p-4 flex flex-col flex-1">
