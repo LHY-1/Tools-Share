@@ -34,25 +34,28 @@ export function SmartBgImage({
       return;
     }
 
-    // 从 URL query 参数解析颜色：?bg=rgb(r,g,b)
+    // __local_image:<id> 本地引用：直接保留原值
+    if (src.startsWith('__local_image:')) {
+      setDisplaySrc(src);
+      setBgColor('#f1f5f9');
+      return;
+    }
+
+    // 标准 URL：解析 ?bg=rgb(...) 并去掉 query
     try {
       const url = new URL(src);
       const bg = url.searchParams.get('bg');
-      if (bg) {
-        setBgColor(decodeURIComponent(bg));
-      } else {
-        setBgColor('#f1f5f9');
-      }
-      // 去掉 query 参数，避免影响图片 src
+      setBgColor(bg ? decodeURIComponent(bg) : '#f1f5f9');
       setDisplaySrc(url.origin + url.pathname);
     } catch {
-      // 非标准 URL（如 data:, __local_image:），直接用原值
+      // data: URL 等非标准格式
       setDisplaySrc(src);
       setBgColor('#f1f5f9');
     }
   }, [src]);
 
-  if (!displaySrc && !src) {
+  // displaySrc 为空时不渲染任何 <img>
+  if (!displaySrc) {
     return (
       <div className={`${aspectRatio} bg-slate-100 flex items-center justify-center ${className}`}>
         <span className="text-slate-400 text-4xl font-bold">{alt?.[0] ?? '?'}</span>
