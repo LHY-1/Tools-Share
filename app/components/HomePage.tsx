@@ -4,7 +4,9 @@ import { useState, useEffect } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Settings } from './Icons';
-import { fetchCloudTools, normalizeCloudTool } from '@/app/lib/cloud-tools';
+import { loadTools } from '@/app/lib/db';
+import { LocalImage } from '@/app/lib/image-utils';
+import { toTool } from '@/app/types';
 import type { Tool } from '@/app/types';
 
 const DEFAULT_CATEGORIES = ['开发工具', '设计工具', '工作效率', '文档管理', '其他工具'];
@@ -17,41 +19,29 @@ export default function HomePage() {
   const [categories, setCategories] = useState<string[]>(DEFAULT_CATEGORIES);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [isOffline, setIsOffline] = useState(false);
 
   useEffect(() => {
     setMounted(true);
-    loadFromCloud();
+    loadFromLocal();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  async function loadFromCloud() {
+  async function loadFromLocal() {
     setLoading(true);
     setLoadError(null);
-    setIsOffline(false);
-    const result = await fetchCloudTools();
-    if (!result) {
-      setLoadError('无法连接云端，请检查网络');
-      setLoading(false);
-      return;
-    }
-    const cloudTools = result.data;
-    if (result.isOffline) setIsOffline(true);
-    if (cloudTools.length === 0) {
-      setLoadError(null);
+    const raw = await loadTools();
+    const allTools = (raw as import('@/app/types').StoredTool[]).map(toTool);
+    if (allTools.length === 0) {
       setTools([]);
+      setCategories([...DEFAULT_CATEGORIES]);
       setLoading(false);
       return;
     }
-    const normalized = cloudTools.map(normalizeCloudTool);
-    setTools(normalized);
-
+    setTools(allTools);
     // 收集所有分类
     const cats = new Set<string>(DEFAULT_CATEGORIES);
-    for (const t of normalized) {
-      for (const c of t.categories ?? []) {
-        cats.add(c);
-      }
+    for (const t of allTools) {
+      for (const c of t.categories ?? []) cats.add(c);
     }
     setCategories([...cats]);
     setLoading(false);
@@ -103,20 +93,12 @@ export default function HomePage() {
           <div className="flex items-center justify-between">
             <div>
               <h1 className="text-3xl font-bold text-slate-900">工具库</h1>
-              <p className="text-slate-600 text-sm mt-0.5">
-                发现高效工具，提升工作效率
-                {isOffline && (
-                  <span className="ml-2 inline-flex items-center gap-1 px-2 py-0.5 rounded bg-amber-100 text-amber-700 text-xs">
-                    <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
-                    离线缓存
-                  </span>
-                )}
-              </p>
+              <p className="text-slate-600 text-sm mt-0.5">发现高效工具，提升工作效率</p>
             </div>
             <div className="flex items-center gap-3">
               {/* 刷新按钮 */}
               <button
-                onClick={loadFromCloud}
+                onClick={loadFromLocal}
                 className="p-2 text-slate-500 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors"
                 title="刷新"
               >
@@ -177,7 +159,7 @@ export default function HomePage() {
           <div className="text-center py-20">
             <p className="text-slate-500 mb-4">{loadError}</p>
             <button
-              onClick={loadFromCloud}
+              onClick={loadFromLocal}
               className="px-4 py-2 bg-slate-900 text-white text-sm rounded-lg hover:bg-slate-700"
             >
               重试
@@ -206,7 +188,7 @@ export default function HomePage() {
                 <div className="group bg-white rounded-xl border border-slate-200 hover:border-slate-300 hover:shadow-md transition-all overflow-hidden cursor-pointer h-full flex flex-col">
                   {tool.imageUrl ? (
                     <div className="aspect-video bg-slate-100 overflow-hidden">
-                      <img
+                      <LocalImage
                         src={tool.imageUrl}
                         alt={tool.name}
                         className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"

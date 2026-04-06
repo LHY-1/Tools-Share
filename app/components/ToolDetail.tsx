@@ -7,7 +7,8 @@ import { Download, ChevronLeft } from './Icons';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeRaw from 'rehype-raw';
-import { fetchCloudTools, normalizeCloudTool } from '@/app/lib/cloud-tools';
+import { loadTools } from '@/app/lib/db';
+import { toTool } from '@/app/types';
 import type { Tool } from '@/app/types';
 
 /**
@@ -27,26 +28,22 @@ export default function ToolDetail({ toolId }: { toolId: string }) {
   const [lightboxImage, setLightboxImage] = useState('');
 
   useEffect(() => {
-    loadFromCloud();
+    loadFromLocal();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [toolId]);
 
-  async function loadFromCloud() {
+  async function loadFromLocal() {
     setLoading(true);
     setLoadError(null);
-    const result = await fetchCloudTools();
-    if (!result) {
-      setLoadError('无法连接云端，请检查网络');
-      setLoading(false);
-      return;
-    }
-    const found = result.data.find((t) => t.id === toolId);
+    const raw = await loadTools();
+    const allTools = (raw as import('@/app/types').StoredTool[]).map(toTool);
+    const found = allTools.find((t) => t.id === toolId);
     if (!found) {
       setLoadError('未找到该工具');
       setLoading(false);
       return;
     }
-    setTool(normalizeCloudTool(found));
+    setTool(found);
     setLoading(false);
   }
 
@@ -80,7 +77,7 @@ export default function ToolDetail({ toolId }: { toolId: string }) {
         <div className="text-center">
           <p className="text-slate-500 text-lg mb-4">{loadError ?? '工具不存在'}</p>
           <button
-            onClick={loadFromCloud}
+            onClick={loadFromLocal}
             className="px-4 py-2 bg-slate-900 text-white text-sm rounded-lg hover:bg-slate-700 mr-3"
           >
             重试
