@@ -194,61 +194,22 @@ export default function ToolDetail({ toolId }: { toolId: string }) {
               </div>
             )}
 
-            {/* 快照图 */}
-            {(tool.screenshotLink || (tool.screenshots ?? []).length > 0) && (
+            {/* 快照：全宽显示，无点击放大 */}
+            {tool.screenshotLink && (
               <div className="mb-8">
-                <h2 className="text-lg font-semibold text-slate-900 mb-3">截图</h2>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {tool.screenshotLink && (
-                    <div
-                      className="rounded-xl border border-slate-200 overflow-hidden cursor-zoom-in"
-                      onClick={() => openLightbox(tool.screenshotLink!)}
-                    >
-                      <img src={tool.screenshotLink} alt="截图" className="w-full object-cover hover:scale-105 transition-transform duration-300" />
-                    </div>
-                  )}
-                  {(tool.screenshots ?? []).map((s, i) => (
-                    <div
-                      key={i}
-                      className="rounded-xl border border-slate-200 overflow-hidden cursor-zoom-in"
-                      onClick={() => openLightbox(s)}
-                    >
-                      <img src={s} alt={`截图 ${i + 1}`} className="w-full object-cover hover:scale-105 transition-transform duration-300" />
-                    </div>
-                  ))}
+                <h2 className="text-lg font-semibold text-slate-900 mb-3">快照</h2>
+                <div className="rounded-xl border border-slate-200 overflow-hidden">
+                  <img 
+                    src={tool.screenshotLink} 
+                    alt="网站快照" 
+                    className="w-full h-auto" 
+                  />
                 </div>
               </div>
             )}
 
-            {/* 特性 */}
-            {(tool.features ?? []).length > 0 && (
-              <div className="mb-8">
-                <h2 className="text-lg font-semibold text-slate-900 mb-3">特性</h2>
-                <ul className="space-y-2">
-                  {(tool.features ?? []).map((f, i) => (
-                    <li key={i} className="flex items-start gap-2 text-slate-600">
-                      <span className="mt-1.5 w-1.5 h-1.5 rounded-full bg-slate-400 shrink-0" />
-                      {f}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-
-            {/* 使用说明 */}
-            {tool.usage && (
-              <div className="mb-8">
-                <h2 className="text-lg font-semibold text-slate-900 mb-3">使用说明</h2>
-                <div className="prose prose-slate max-w-none">
-                  <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>
-                    {tool.usage}
-                  </ReactMarkdown>
-                </div>
-              </div>
-            )}
-
-            {/* 完整描述 */}
-            {tool.fullDescription && (
+            {/* 详细介绍（无详细介绍时显示快照占位） */}
+            {tool.fullDescription ? (
               <div className="mb-8">
                 <div className="flex items-center justify-between mb-3">
                   <h2 className="text-lg font-semibold text-slate-900">详细介绍</h2>
@@ -264,8 +225,8 @@ export default function ToolDetail({ toolId }: { toolId: string }) {
                   </ReactMarkdown>
                 </div>
               </div>
-            )}
-            {!tool.fullDescription && (
+            ) : (
+              /* 无详细介绍时，快照充当内容（已在上方显示），这里显示提示 */
               <div className="mb-8 p-4 bg-slate-50 rounded-lg text-center">
                 <p className="text-slate-400 text-sm mb-2">暂无详细介绍</p>
                 <Link href={`/admin?edit=${tool.id}`}>
@@ -273,6 +234,31 @@ export default function ToolDetail({ toolId }: { toolId: string }) {
                     添加详细介绍
                   </button>
                 </Link>
+              </div>
+            )}
+
+            {/* 截图：保持纵横比，点击放大 */}
+            {(tool.screenshots ?? []).length > 0 && (
+              <div className="mb-8">
+                <h2 className="text-lg font-semibold text-slate-900 mb-3">截图</h2>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {(tool.screenshots ?? []).map((s, i) => (
+                    <div
+                      key={i}
+                      className="rounded-xl border border-slate-200 overflow-hidden cursor-zoom-in"
+                      onClick={() => openLightbox(s)}
+                    >
+                      <img 
+                        src={s} 
+                        alt={tool.screenshotLabels?.[i] || `截图 ${i + 1}`} 
+                        className="w-full h-auto object-cover hover:scale-105 transition-transform duration-300" 
+                      />
+                      {tool.screenshotLabels?.[i] && (
+                        <p className="text-xs text-slate-500 p-2 bg-slate-50">{tool.screenshotLabels[i]}</p>
+                      )}
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
           </div>
