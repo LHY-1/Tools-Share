@@ -6,7 +6,7 @@ import { Tool, StoredTool, CreateToolInput, toTool } from '@/app/types';
 import { Trash2, Edit2, Plus, Eye, EyeOff, GripVertical, Upload, Download, CheckCircle, AlertCircle } from './Icons';
 import Link from 'next/link';
 import Image from 'next/image';
-import { loadTools, saveTools } from '@/app/lib/db';
+import { loadTools, saveTools, saveCategories, loadCategories } from '@/app/lib/db';
 import { exportAllData, importData, type ImportResult } from '@/app/lib/export-import';
 import { materializeToolImagesToCloud, LocalImage } from '@/app/lib/image-utils';
 
@@ -112,18 +112,10 @@ export default function AdminPage() {
 
         setTools(mapped.map((t) => toTool(t)));
 
-        if (typeof window !== 'undefined') {
-          const savedCategories = localStorage.getItem('categories');
-          if (savedCategories) {
-            try {
-              const parsed = JSON.parse(savedCategories);
-              if (Array.isArray(parsed) && parsed.length > 0) {
-                setCategories(parsed);
-              }
-            } catch (e) {
-              console.error('加载分类失败:', e);
-            }
-          }
+        // 从 IndexedDB 加载分类
+        const savedCategories = await loadCategories();
+        if (savedCategories && savedCategories.length > 0) {
+          setCategories(savedCategories);
         }
       } catch (error) {
         console.error('初始化加载失败:', error);
@@ -170,8 +162,8 @@ export default function AdminPage() {
   }, [tools]);
 
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('categories', JSON.stringify(categories));
+    if (categories.length > 0) {
+      saveCategories(categories).catch(console.error);
     }
   }, [categories]);
 

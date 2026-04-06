@@ -79,6 +79,32 @@ export async function clearTools(): Promise<void> {
   });
 }
 
+// ─── Categories（存在 tools store，key='__categories__'）─────────────────────
+
+const CATEGORIES_KEY = '__categories__';
+
+export async function saveCategories(categories: string[]): Promise<void> {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(TOOLS_STORE, 'readwrite');
+    const store = tx.objectStore(TOOLS_STORE);
+    store.put({ id: CATEGORIES_KEY, categories });
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+export async function loadCategories(): Promise<string[] | null> {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(TOOLS_STORE, 'readonly');
+    const store = tx.objectStore(TOOLS_STORE);
+    const req = store.get(CATEGORIES_KEY);
+    req.onsuccess = () => resolve(req.result?.categories ?? null);
+    req.onerror = () => reject(req.error);
+  });
+}
+
 // ─── Images ──────────────────────────────────────────────────────────────────
 
 export interface StoredImage {
