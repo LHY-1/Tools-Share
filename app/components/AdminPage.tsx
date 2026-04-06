@@ -1014,10 +1014,31 @@ export default function AdminPage() {
                         </div>
                       ))}
                     </div>
-                    <div className="flex gap-2 flex-wrap">
-                      <input type="text" value={newDownloadLinkLabel} onChange={(e) => setNewDownloadLinkLabel(e.target.value)}
-                        className="w-32 px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                        placeholder="版本标签" />
+                    {/* 预设标签快捷按钮 */}
+                    <div className="flex gap-2 flex-wrap mb-2">
+                      {['百度网盘', '夸克云盘', '阿里云盘', ...(dataMode === 'local' ? ['本地链接'] : []), '第三方链接'].map((label) => (
+                        <button key={label} type="button"
+                          onClick={() => setNewDownloadLinkLabel(label)}
+                          className={`px-3 py-1.5 rounded-full text-sm border transition-colors ${
+                            newDownloadLinkLabel === label
+                              ? 'bg-blue-600 text-white border-blue-600'
+                              : 'bg-white text-slate-700 border-slate-300 hover:border-blue-400 hover:text-blue-600'
+                          }`}>
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                    <div className="flex gap-2 flex-wrap items-center">
+                      {newDownloadLinkLabel && newDownloadLinkLabel !== '第三方链接' ? (
+                        <span className="px-3 py-2 bg-blue-50 text-blue-700 border border-blue-200 rounded-lg text-sm font-medium min-w-[100px] text-center">
+                          {newDownloadLinkLabel}
+                        </span>
+                      ) : (
+                        <input type="text" value={newDownloadLinkLabel}
+                          onChange={(e) => setNewDownloadLinkLabel(e.target.value)}
+                          className="w-36 px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+                          placeholder="自定义标签" />
+                      )}
                       <input type="url" value={newDownloadLink} onChange={(e) => setNewDownloadLink(e.target.value)}
                         className="flex-1 min-w-[200px] px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                         placeholder="https://example.com/download" />
