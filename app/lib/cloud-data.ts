@@ -88,3 +88,52 @@ export function validateCloudData(tools: Tool[]): { valid: boolean; errors: stri
 
   return { valid: errors.length === 0, errors };
 }
+
+/**
+ * 保存分类列表到云端
+ */
+export async function saveCloudCategories(categories: string[]): Promise<boolean> {
+  try {
+    const res = await fetch('/api/cloud/save', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        key: 'tools:categories:v1',
+        value: JSON.stringify(categories),
+      }),
+    });
+    if (!res.ok) {
+      console.error('[cloud-data] Save categories failed:', res.status);
+      return false;
+    }
+    console.log('[cloud-data] Saved', categories.length, 'categories to cloud');
+    return true;
+  } catch (err) {
+    console.error('[cloud-data] Save categories error:', err);
+    return false;
+  }
+}
+
+/**
+ * 从云端加载分类列表
+ */
+export async function loadCloudCategories(): Promise<string[] | null> {
+  try {
+    const res = await fetch('/api/cloud/load', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ key: 'tools:categories:v1' }),
+    });
+    if (!res.ok) {
+      console.error('[cloud-data] Load categories failed:', res.status);
+      return null;
+    }
+    const data = await res.json();
+    if (!data.result) return null;
+    const parsed = JSON.parse(data.result);
+    return Array.isArray(parsed) ? parsed : null;
+  } catch (err) {
+    console.error('[cloud-data] Load categories error:', err);
+    return null;
+  }
+}

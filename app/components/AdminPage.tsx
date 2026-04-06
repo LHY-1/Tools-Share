@@ -12,6 +12,7 @@ import { materializeToolImagesToCloud, LocalImage } from '@/app/lib/image-utils'
 import { publishToCloud } from '@/app/lib/publish';
 import { downloadFromCloud } from '@/app/lib/download';
 import { getDataMode, DataMode } from '@/app/lib/mode';
+import { saveCloudCategories, loadCloudCategories } from '@/app/lib/cloud-data';
 
 const DEFAULT_CATEGORIES = ['开发工具', '设计工具', '工作效率', '文档管理', '其他工具'];
 
@@ -310,6 +311,9 @@ export default function AdminPage() {
       const result = await publishToCloud();
       
       if (result.success) {
+        // 同步分类到云端
+        await saveCloudCategories(categories);
+
         const now = new Date().toISOString();
         const newStatus = { ...syncStatus, lastPublish: now };
         setSyncStatus(newStatus);
@@ -359,6 +363,13 @@ export default function AdminPage() {
           usage: tool.usage || '',
         }));
         setTools(mapped.map((t) => toTool(t)));
+
+        // 从云端恢复分类
+        const cloudCats = await loadCloudCategories();
+        if (cloudCats && cloudCats.length > 0) {
+          setCategories(cloudCats);
+          await saveCategories(cloudCats);
+        }
         
         setSyncMessage(`✓ 已下载 ${result.downloadedCount} 个工具，${result.totalImages} 张图片`);
       } else {
