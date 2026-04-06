@@ -7,17 +7,15 @@ import { Download, ChevronLeft } from './Icons';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeRaw from 'rehype-raw';
-import { loadTools } from '@/app/lib/db';
-import { toTool } from '@/app/types';
+import { loadToolsByMode } from '@/app/lib/data';
+import { getDataMode } from '@/app/lib/mode';
 import type { Tool } from '@/app/types';
 
 /**
- * 公开工具详情页（只读）
- *
- * 数据来源：Redis 云端（通过 /api/cloud/load）
- * 图片：Blob URL（直接 <img src>）
- *
- * 无任何本地存储依赖（IndexedDB / localStorage / __local_image:* / data:image/*）
+ * 工具详情页
+ * 
+ * - cloud 模式：数据从 Redis 加载，图片是 Blob URL
+ * - local 模式：数据从 IndexedDB 加载，图片是 __local_image:* 引用
  */
 export default function ToolDetail({ toolId }: { toolId: string }) {
   const router = useRouter();
@@ -27,9 +25,10 @@ export default function ToolDetail({ toolId }: { toolId: string }) {
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [lightboxImage, setLightboxImage] = useState('');
   const [isFromAdmin, setIsFromAdmin] = useState(false);
+  const [dataMode, setDataMode] = useState<'local' | 'cloud'>('local');
 
   useEffect(() => {
-    loadFromLocal();
+    loadData();
     // 判断来源：只有从 /admin 页面来的才显示编辑按钮
     if (typeof window !== 'undefined') {
       setIsFromAdmin(document.referrer.includes('/admin'));
@@ -37,18 +36,28 @@ export default function ToolDetail({ toolId }: { toolId: string }) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [toolId]);
 
-  async function loadFromLocal() {
+  async function loadData() {
     setLoading(true);
     setLoadError(null);
-    const raw = await loadTools();
-    const allTools = (raw as import('@/app/types').StoredTool[]).map(toTool);
-    const found = allTools.find((t) => t.id === toolId);
-    if (!found) {
-      setLoadError('未找到该工具');
-      setLoading(false);
-      return;
+    
+    const mode = getDataMode();
+    setDataMode(mode);
+    console.log(`[ToolDetail] Mode: ${mode}`);
+    
+    try {
+      const allTools = await loadToolsByMode();
+      const found = allTools.find((t) => t.id === toolId);
+      if (!found) {
+        setLoadError('未找到该工具');
+        setLoading(false);
+        return;
+      }
+      setTool(found);
+    } catch (err) {
+      console.error('[ToolDetail] Load error:', err);
+      setLoadError(err instanceof Error ? err.message : '加载失败');
     }
-    setTool(found);
+    
     setLoading(false);
   }
 
@@ -82,7 +91,7 @@ export default function ToolDetail({ toolId }: { toolId: string }) {
         <div className="text-center">
           <p className="text-slate-500 text-lg mb-4">{loadError ?? '工具不存在'}</p>
           <button
-            onClick={loadFromLocal}
+            onClick={loadData}
             className="px-4 py-2 bg-slate-900 text-white text-sm rounded-lg hover:bg-slate-700 mr-3"
           >
             重试

@@ -4,10 +4,11 @@ import { useState, useEffect } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Settings } from './Icons';
-import { loadTools } from '@/app/lib/db';
+import { loadToolsByMode } from '@/app/lib/data';
+import { getDataMode } from '@/app/lib/mode';
 import { LocalImage } from '@/app/lib/image-utils';
 import { toTool } from '@/app/types';
-import type { Tool } from '@/app/types';
+import type { Tool, StoredTool } from '@/app/types';
 
 const DEFAULT_CATEGORIES = ['开发工具', '设计工具', '工作效率', '文档管理', '其他工具'];
 
@@ -19,33 +20,47 @@ export default function HomePage() {
   const [categories, setCategories] = useState<string[]>(DEFAULT_CATEGORIES);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [dataMode, setDataMode] = useState<'local' | 'cloud'>('local');
 
   useEffect(() => {
     setMounted(true);
-    loadFromLocal();
+    loadData();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  async function loadFromLocal() {
+  async function loadData() {
     setLoading(true);
     setLoadError(null);
-    const raw = await loadTools();
-    // 过滤掉特殊记录（如 __categories__）
-    const validTools = (raw as import('@/app/types').StoredTool[]).filter(t => t.id && !t.id.startsWith('__'));
-    const allTools = validTools.map(toTool);
-    if (allTools.length === 0) {
-      setTools([]);
-      setCategories([...DEFAULT_CATEGORIES]);
-      setLoading(false);
-      return;
+    
+    const mode = getDataMode();
+    setDataMode(mode);
+    console.log(`[HomePage] Mode: ${mode}`);
+    
+    try {
+      const loadedTools = await loadToolsByMode();
+      // 过滤掉特殊记录（如 __categories__）
+      const validTools = loadedTools.filter(t => t.id && !t.id.startsWith('__'));
+      
+      if (validTools.length === 0) {
+        setTools([]);
+        setCategories([...DEFAULT_CATEGORIES]);
+        setLoading(false);
+        return;
+      }
+      
+      setTools(validTools);
+      
+      // 收集所有分类
+      const cats = new Set<string>(DEFAULT_CATEGORIES);
+      for (const t of validTools) {
+        for (const c of t.categories ?? []) cats.add(c);
+      }
+      setCategories([...cats]);
+    } catch (err) {
+      console.error('[HomePage] Load error:', err);
+      setLoadError(err instanceof Error ? err.message : '加载失败');
     }
-    setTools(allTools);
-    // 收集所有分类
-    const cats = new Set<string>(DEFAULT_CATEGORIES);
-    for (const t of allTools) {
-      for (const c of t.categories ?? []) cats.add(c);
-    }
-    setCategories([...cats]);
+    
     setLoading(false);
   }
 
@@ -100,7 +115,7 @@ export default function HomePage() {
             <div className="flex items-center gap-3">
               {/* 刷新按钮 */}
               <button
-                onClick={loadFromLocal}
+                onClick={loadData}
                 className="p-2 text-slate-500 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors"
                 title="刷新"
               >
@@ -161,7 +176,7 @@ export default function HomePage() {
           <div className="text-center py-20">
             <p className="text-slate-500 mb-4">{loadError}</p>
             <button
-              onClick={loadFromLocal}
+              onClick={loadData}
               className="px-4 py-2 bg-slate-900 text-white text-sm rounded-lg hover:bg-slate-700"
             >
               重试

@@ -3,14 +3,25 @@
 import { useState, useEffect, useRef, type ChangeEvent } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { Tool, StoredTool, CreateToolInput, toTool } from '@/app/types';
-import { Trash2, Edit2, Plus, Eye, EyeOff, GripVertical, Upload, Download, CheckCircle, AlertCircle } from './Icons';
+import { Trash2, Edit2, Plus, Eye, EyeOff, GripVertical, Upload, Download, CheckCircle, AlertCircle, Cloud, HardDrive, CloudUpload, CloudDownload } from './Icons';
 import Link from 'next/link';
 import Image from 'next/image';
 import { loadTools, saveTools, saveCategories, loadCategories } from '@/app/lib/db';
 import { exportAllData, importData, type ImportResult } from '@/app/lib/export-import';
 import { materializeToolImagesToCloud, LocalImage } from '@/app/lib/image-utils';
+import { publishToCloud } from '@/app/lib/publish';
+import { downloadFromCloud } from '@/app/lib/download';
+import { getDataMode, DataMode } from '@/app/lib/mode';
 
 const DEFAULT_CATEGORIES = ['开发工具', '设计工具', '工作效率', '文档管理', '其他工具'];
+
+interface SyncStatus {
+  lastPublish?: string;
+  lastDownload?: string;
+  lastExport?: string;
+  lastImport?: string;
+  lastError?: string;
+}
 
 export default function AdminPage() {
   const searchParams = useSearchParams();
@@ -43,6 +54,10 @@ export default function AdminPage() {
   const [categories, setCategories] = useState<string[]>([]);
   const [categoriesInitialized, setCategoriesInitialized] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [dataMode, setDataMode] = useState<DataMode>('local');
+  const [syncStatus, setSyncStatus] = useState<SyncStatus>({});
+  const [syncing, setSyncing] = useState(false);
+  const [syncMessage, setSyncMessage] = useState<string | null>(null);
 
   // 图片上传
   const imageFileInputRef = useRef<HTMLInputElement>(null);
@@ -167,6 +182,17 @@ export default function AdminPage() {
 
   useEffect(() => {
     async function initLoad() {
+      // 判断当前模式
+      const mode = getDataMode();
+      setDataMode(mode);
+      console.log(`[AdminPage] Mode: ${mode}`);
+      
+      // 加载同步状态
+      try {
+        const saved = localStorage.getItem('sync-status');
+        if (saved) setSyncStatus(JSON.parse(saved));
+      } catch {}
+      
       try {
         let loadedTools: StoredTool[] = [];
         try {
@@ -266,115 +292,75 @@ export default function AdminPage() {
   const [cloudStatus, setCloudStatus] = useState<string>('');
 
   /**
-   * 同步到云端：
-   * 1. 遍历每个工具的每个图片字段
-   * 2. __local_image:<id> → 读 IndexedDB → 上传 Blob → blob URL
-   * 3. 外链 URL → 下载 → 上传 Blob → blob URL
-   * 4. Blob URL → 跳过（已是云端）
-   * 5. 任意一张图失败 → 整工具同步失败
-   * 6. 最终写入 Redis 的 JSON 里图片字段全是 Blob URL
-   * 7. 同步成功后把 Blob URL 写回本地 IndexedDB，下次同步不再重复上传
+   * 发布到云端（Local -> Cloud）
    */
-  const handleSyncToCloud = async () => {
-    setCloudLoading(true);
-    setCloudStatus('');
+  const handlePublishToCloud = async () => {
+    if (!confirm('发布到云端会将所有本地图片上传到 Vercel Blob，确定继续？')) return;
+    setSyncing(true);
+    setSyncMessage('正在发布到云端...');
+    
     try {
-      const storedTools = await loadTools<StoredTool>();
-      const syncedTools: StoredTool[] = [];
-      let processedCount = 0;
-
-      for (const tool of storedTools) {
-        setCloudStatus(`正在同步工具 "${tool.name}" 的图片...`);
-
-        const { tool: synced, results } = await materializeToolImagesToCloud(tool, (msg) => {
-          setCloudStatus(msg);
-        });
-
-        const failures = results.filter((r) => !r.success);
-        if (failures.length > 0) {
-          const msgs = failures.map((f) => f.error).join('; ');
-          throw new Error(`工具 "${tool.name}" 图片同步失败: ${msgs}`);
-        }
-
-        syncedTools.push(synced);
-        processedCount++;
+      const result = await publishToCloud();
+      
+      if (result.success) {
+        const now = new Date().toISOString();
+        const newStatus = { ...syncStatus, lastPublish: now };
+        setSyncStatus(newStatus);
+        localStorage.setItem('sync-status', JSON.stringify(newStatus));
+        setSyncMessage(`✓ 已发布 ${result.publishedCount} 个工具到云端，上传 ${result.uploadedImages}/${result.totalImages} 张图片`);
+      } else {
+        const errors = result.failedTools.map(t => `${t.name}: ${t.error}`).join('\n');
+        setSyncMessage(`✗ 发布失败:\n${errors}`);
       }
-
-      setCloudStatus(`正在写入云端数据库...`);
-      const data = JSON.stringify(syncedTools);
-      const res = await fetch('/api/cloud/save', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ key: 'tools-data', value: data }),
-      });
-      const result = await res.json();
-      if (!res.ok) throw new Error(result.error || '保存失败');
-
-      // ── 关键：把 Blob URL 写回本地 IndexedDB ──────────────────────────────
-      // 同步后工具数据里的图片字段已全是 Blob URL（不再有 __local_image:*）
-      // 下次同步时 isBlobUrl() 检测到 Blob URL → 直接跳过，不重复上传
-      setCloudStatus(`正在回写本地数据...`);
-      await saveTools(syncedTools);
-      setTools(syncedTools as Tool[]);
-
-      setCloudStatus(`✓ 已同步 ${processedCount} 个工具到云端（本地已回写）`);
     } catch (err: any) {
-      setCloudStatus(`✗ 同步失败: ${err.message}`);
+      setSyncMessage(`✗ 发布失败: ${err.message}`);
     } finally {
-      setCloudLoading(false);
+      setSyncing(false);
     }
   };
 
-  const handleRestoreFromCloud = async () => {
-    if (!confirm('从云端恢复会覆盖本地数据，确定继续？')) return;
-    setCloudLoading(true);
-    setCloudStatus('');
+  /**
+   * 从云端下载到本地（Cloud -> Local）
+   */
+  const handleDownloadFromCloud = async () => {
+    if (!confirm('从云端下载会覆盖本地数据，确定继续？')) return;
+    setSyncing(true);
+    setSyncMessage('正在从云端下载...');
+    
     try {
-      const res = await fetch('/api/cloud/load', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ key: 'tools-data' }),
-      });
-      const result = await res.json();
-      if (!res.ok) throw new Error(result.error || '加载失败');
-
-      // 新 API 返回 { tools: [...] }，load API 已做 gzip 解压
-      const storedTools: StoredTool[] = Array.isArray(result.tools) ? result.tools : [];
-      if (storedTools.length === 0) {
-        throw new Error('云端暂无数据');
+      const result = await downloadFromCloud();
+      
+      if (result.success) {
+        const now = new Date().toISOString();
+        const newStatus = { ...syncStatus, lastDownload: now };
+        setSyncStatus(newStatus);
+        localStorage.setItem('sync-status', JSON.stringify(newStatus));
+        
+        // 重新加载本地数据
+        const all = await loadTools<StoredTool>();
+        const validTools = all.filter(t => t.id && !t.id.startsWith('__'));
+        const mapped = validTools.map((tool) => ({
+          ...tool,
+          createdAt: new Date(tool.createdAt),
+          updatedAt: new Date(tool.updatedAt),
+          categories: tool.categories || (tool.category ? [tool.category] : [DEFAULT_CATEGORIES[0]]),
+          downloadLinks: tool.downloadLinks || (tool.downloadLink ? [tool.downloadLink] : []),
+          screenshotLink: tool.screenshotLink || '',
+          fullDescription: tool.fullDescription || '',
+          features: tool.features || [],
+          screenshots: tool.screenshots || [],
+          usage: tool.usage || '',
+        }));
+        setTools(mapped.map((t) => toTool(t)));
+        
+        setSyncMessage(`✓ 已下载 ${result.downloadedCount} 个工具，${result.totalImages} 张图片`);
+      } else {
+        setSyncMessage(`✗ 下载失败: ${result.failedImages.join(', ')}`);
       }
-
-      // 确保每条数据有 id，没有则跳过
-      const validTools = storedTools.filter((t: StoredTool) => {
-        if (!t?.id) {
-          console.warn('云端数据缺少 id，已跳过:', t);
-          return false;
-        }
-        return true;
-      });
-      if (validTools.length === 0) {
-        throw new Error('云端数据中没有有效的工具记录');
-      }
-
-      await saveTools(validTools);
-      const mapped = validTools.map((tool) => ({
-        ...tool,
-        createdAt: new Date(tool.createdAt),
-        updatedAt: new Date(tool.updatedAt),
-        categories: tool.categories || (tool.category ? [tool.category] : [DEFAULT_CATEGORIES[0]]),
-        downloadLinks: tool.downloadLinks || (tool.downloadLink ? [tool.downloadLink] : []),
-        screenshotLink: tool.screenshotLink || '',
-        fullDescription: tool.fullDescription || '',
-        features: tool.features || [],
-        screenshots: tool.screenshots || [],
-        usage: tool.usage || '',
-      }));
-      setTools(mapped.map((t) => toTool(t)));
-      setCloudStatus(`✓ 已从云端恢复 ${validTools.length} 个工具`);
     } catch (err: any) {
-      setCloudStatus(`✗ 恢复失败: ${err.message}`);
+      setSyncMessage(`✗ 下载失败: ${err.message}`);
     } finally {
-      setCloudLoading(false);
+      setSyncing(false);
     }
   };
 
@@ -382,6 +368,10 @@ export default function AdminPage() {
   const handleExport = async () => {
     try {
       await exportAllData();
+      const now = new Date().toISOString();
+      const newStatus = { ...syncStatus, lastExport: now };
+      setSyncStatus(newStatus);
+      localStorage.setItem('sync-status', JSON.stringify(newStatus));
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       alert(`导出失败: ${msg}`);
@@ -398,6 +388,11 @@ export default function AdminPage() {
       const result = await importData(file);
       setImportResult(result);
       if (result.success) {
+        const now = new Date().toISOString();
+        const newStatus = { ...syncStatus, lastImport: now };
+        setSyncStatus(newStatus);
+        localStorage.setItem('sync-status', JSON.stringify(newStatus));
+        
         // 刷新列表
         const loaded = await loadTools<StoredTool>();
         const mapped = loaded.map((tool) => ({
@@ -643,59 +638,102 @@ export default function AdminPage() {
               <p className="text-slate-600 text-sm mt-0.5">添加、编辑和组织您的工具收藏</p>
             </div>
             <div className="flex items-center gap-3">
-              {/* 数据迁移按钮 */}
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={handleExport}
-                  disabled={isLoading}
-                  className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-300 text-white rounded-lg transition-colors font-medium text-sm"
-                >
-                  <Download className="w-4 h-4" />
-                  导出数据
-                </button>
-                <button
-                  onClick={() => fileInputRef.current?.click()}
-                  disabled={isLoading}
-                  className="inline-flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-700 disabled:bg-purple-300 text-white rounded-lg transition-colors font-medium text-sm"
-                >
-                  <Upload className="w-4 h-4" />
-                  导入数据
-                </button>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept=".zip"
-                  className="hidden"
-                  onChange={handleFileChange}
-                />
-                <div className="h-6 w-px bg-slate-300 mx-1" />
-                <button
-                  onClick={handleSyncToCloud}
-                  disabled={cloudLoading}
-                  className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white rounded-lg transition-colors font-medium text-sm"
-                >
-                  <Upload className="w-4 h-4" />
-                  {cloudLoading ? '同步中...' : '同步到云端'}
-                </button>
-                <button
-                  onClick={handleRestoreFromCloud}
-                  disabled={cloudLoading}
-                  className="inline-flex items-center gap-2 px-4 py-2 bg-amber-600 hover:bg-amber-700 disabled:bg-amber-300 text-white rounded-lg transition-colors font-medium text-sm"
-                >
-                  <Download className="w-4 h-4" />
-                  {cloudLoading ? '恢复中...' : '从云端恢复'}
-                </button>
+              {/* 当前模式显示 */}
+              <div className="flex items-center gap-2 px-3 py-1.5 bg-slate-100 rounded-lg">
+                {dataMode === 'local' ? (
+                  <>
+                    <HardDrive className="w-4 h-4 text-slate-600" />
+                    <span className="text-sm font-medium text-slate-700">本地模式</span>
+                  </>
+                ) : (
+                  <>
+                    <Cloud className="w-4 h-4 text-blue-600" />
+                    <span className="text-sm font-medium text-blue-700">云端模式</span>
+                  </>
+                )}
               </div>
-              {cloudStatus && (
-                <div className={`text-sm font-medium ${cloudStatus.startsWith('✓') ? 'text-green-600' : 'text-red-500'}`}>
-                  {cloudStatus}
-                </div>
-              )}
+              
+              {/* 本地操作按钮 */}
+              <button
+                onClick={handleExport}
+                disabled={isLoading || syncing}
+                className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-300 text-white rounded-lg transition-colors font-medium text-sm"
+              >
+                <Download className="w-4 h-4" />
+                导出本地数据
+              </button>
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                disabled={isLoading || syncing}
+                className="inline-flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-700 disabled:bg-purple-300 text-white rounded-lg transition-colors font-medium text-sm"
+              >
+                <Upload className="w-4 h-4" />
+                导入本地数据
+              </button>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".zip"
+                className="hidden"
+                onChange={handleFileChange}
+              />
+              
+              <div className="h-6 w-px bg-slate-300 mx-1" />
+              
+              {/* 云端操作按钮 */}
+              <button
+                onClick={handlePublishToCloud}
+                disabled={syncing}
+                className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white rounded-lg transition-colors font-medium text-sm"
+              >
+                <CloudUpload className="w-4 h-4" />
+                {syncing ? '发布中...' : '发布到云端'}
+              </button>
+              <button
+                onClick={handleDownloadFromCloud}
+                disabled={syncing}
+                className="inline-flex items-center gap-2 px-4 py-2 bg-amber-600 hover:bg-amber-700 disabled:bg-amber-300 text-white rounded-lg transition-colors font-medium text-sm"
+              >
+                <CloudDownload className="w-4 h-4" />
+                {syncing ? '下载中...' : '从云端下载'}
+              </button>
+              
               <Link href="/" className="inline-flex items-center gap-2 px-4 py-2 bg-slate-700 hover:bg-slate-800 text-white rounded-lg transition-colors font-medium">
                 返回首页
               </Link>
             </div>
           </div>
+          
+          {/* 同步状态显示 */}
+          {(syncMessage || syncStatus.lastPublish || syncStatus.lastDownload) && (
+            <div className="mt-2 flex items-center gap-4 text-sm">
+              {syncMessage && (
+                <span className={syncMessage.startsWith('✓') ? 'text-green-600' : 'text-red-500'}>
+                  {syncMessage}
+                </span>
+              )}
+              {syncStatus.lastPublish && (
+                <span className="text-slate-500">
+                  上次发布: {new Date(syncStatus.lastPublish).toLocaleString()}
+                </span>
+              )}
+              {syncStatus.lastDownload && (
+                <span className="text-slate-500">
+                  上次下载: {new Date(syncStatus.lastDownload).toLocaleString()}
+                </span>
+              )}
+              {syncStatus.lastExport && (
+                <span className="text-slate-500">
+                  上次导出: {new Date(syncStatus.lastExport).toLocaleString()}
+                </span>
+              )}
+              {syncStatus.lastImport && (
+                <span className="text-slate-500">
+                  上次导入: {new Date(syncStatus.lastImport).toLocaleString()}
+                </span>
+              )}
+            </div>
+          )}
         </div>
       </header>
 
