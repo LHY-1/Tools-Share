@@ -477,6 +477,7 @@ export function LocalImage({
       .catch(() => {});
   }, [src]);
 
+  if (!resolved) return null;
   return <img src={resolved} alt={alt ?? ''} {...imgProps} />;
 }
 
