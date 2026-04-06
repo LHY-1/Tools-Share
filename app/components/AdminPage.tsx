@@ -12,7 +12,7 @@ import { materializeToolImagesToCloud, LocalImage } from '@/app/lib/image-utils'
 import { publishToCloud } from '@/app/lib/publish';
 import { downloadFromCloud } from '@/app/lib/download';
 import { getDataMode, DataMode } from '@/app/lib/mode';
-import { saveCloudCategories, loadCloudCategories } from '@/app/lib/cloud-data';
+import { saveCloudCategories, loadCloudCategories, loadCloudTools } from '@/app/lib/cloud-data';
 
 const DEFAULT_CATEGORIES = ['开发工具', '设计工具', '工作效率', '文档管理', '其他工具'];
 
@@ -203,14 +203,44 @@ export default function AdminPage() {
       
       try {
         let loadedTools: StoredTool[] = [];
-        try {
-          const all = await loadTools<StoredTool>();
-          // 过滤掉特殊记录（如 __categories__）
-          loadedTools = all.filter(t => t.id && !t.id.startsWith('__'));
-        } catch (e) {
-          console.warn('IndexedDB 加载失败:', e);
+
+        // cloud 模式：优先从云端拉取最新数据
+        if (mode === 'cloud') {
+          try {
+            const cloudTools = await loadCloudTools();
+            if (cloudTools.length > 0) {
+              const asStored: StoredTool[] = cloudTools.map(t => {
+                const { downloadLinks, screenshotLink, screenshots, features, fullDescription, usage, ...rest } = t as any;
+                return {
+                  ...rest,
+                  downloadLinks: downloadLinks || [],
+                  screenshotLink: screenshotLink || '',
+                  screenshots: screenshots || [],
+                  features: features || [],
+                  fullDescription: fullDescription || '',
+                  usage: usage || '',
+                  categories: t.categories || [DEFAULT_CATEGORIES[0]],
+                };
+              });
+              await saveTools(asStored);
+              loadedTools = asStored;
+            }
+          } catch (e) {
+            console.warn('云端加载失败，回退到本地:', e);
+          }
         }
 
+        // 回退：本地 IndexedDB
+        if (loadedTools.length === 0) {
+          try {
+            const all = await loadTools<StoredTool>();
+            loadedTools = all.filter(t => t.id && !t.id.startsWith('__'));
+          } catch (e) {
+            console.warn('IndexedDB 加载失败:', e);
+          }
+        }
+
+        // 最后回退：localStorage
         if (loadedTools.length === 0) {
           if (typeof window !== 'undefined') {
             const saved = localStorage.getItem('tools');
