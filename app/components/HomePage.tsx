@@ -30,7 +30,9 @@ export default function HomePage() {
     setLoading(true);
     setLoadError(null);
     const raw = await loadTools();
-    const allTools = (raw as import('@/app/types').StoredTool[]).map(toTool);
+    // 过滤掉特殊记录（如 __categories__）
+    const validTools = (raw as import('@/app/types').StoredTool[]).filter(t => t.id && !t.id.startsWith('__'));
+    const allTools = validTools.map(toTool);
     if (allTools.length === 0) {
       setTools([]);
       setCategories([...DEFAULT_CATEGORIES]);

@@ -82,7 +82,9 @@ export default function AdminPage() {
       try {
         let loadedTools: StoredTool[] = [];
         try {
-          loadedTools = await loadTools<StoredTool>();
+          const all = await loadTools<StoredTool>();
+          // 过滤掉特殊记录（如 __categories__）
+          loadedTools = all.filter(t => t.id && !t.id.startsWith('__'));
         } catch (e) {
           console.warn('IndexedDB 加载失败:', e);
         }
