@@ -13,9 +13,9 @@ interface SmartBgImageProps {
 
 /**
  * 智能背景图片组件
- * - 从图片边缘采样颜色，作为背景填充色
+ * - 从图片边缘采样颜色，作为背景填充色（仅限同源图片）
  * - 图片居中显示，保持原比例
- * - 背景色过渡自然
+ * - 外链图片使用渐变背景
  */
 export function SmartBgImage({
   src,
@@ -26,24 +26,21 @@ export function SmartBgImage({
 }: SmartBgImageProps) {
   const [bgColor, setBgColor] = useState<string>('#f1f5f9'); // 默认 slate-100
   const [resolved, setResolved] = useState<string>('');
+  const [imageLoaded, setImageLoaded] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   // 解析图片 src（处理 __local_image: 引用）
   useEffect(() => {
     if (!src) {
       setResolved('');
+      setImageLoaded(false);
       return;
     }
-    if (src.startsWith('__local_image:')) {
-      // LocalImage 内部会处理，这里用一个占位逻辑
-      // 实际渲染交给 LocalImage
-      setResolved(src);
-    } else {
-      setResolved(src);
-    }
+    setResolved(src);
+    setImageLoaded(false);
   }, [src]);
 
-  // 从图片边缘采样颜色
+  // 从图片边缘采样颜色（仅同源图片可用）
   const extractEdgeColor = useCallback((img: HTMLImageElement) => {
     const canvas = canvasRef.current;
     if (!canvas) return '#f1f5f9';
@@ -98,15 +95,25 @@ export function SmartBgImage({
 
       return `rgb(${r}, ${g}, ${b})`;
     } catch {
+      // 跨域错误，返回默认颜色
       return '#f1f5f9';
     }
   }, []);
 
   const handleImageLoad = useCallback((e: React.SyntheticEvent<HTMLImageElement>) => {
+    setImageLoaded(true);
     const img = e.currentTarget;
-    const color = extractEdgeColor(img);
-    setBgColor(color);
+    try {
+      const color = extractEdgeColor(img);
+      setBgColor(color);
+    } catch {
+      // 跨域限制，保持默认背景
+    }
   }, [extractEdgeColor]);
+
+  // 判断是否是外链图片（无法采样颜色）
+  const isExternal = resolved && (resolved.startsWith('http://') || resolved.startsWith('https://'));
+  const useGradientBg = isExternal && !resolved.includes('cdn.vercel-storage.com');
 
   if (!resolved) {
     return (
@@ -119,7 +126,11 @@ export function SmartBgImage({
   return (
     <div 
       className={`${aspectRatio} overflow-hidden flex items-center justify-center transition-colors duration-500 ${className}`}
-      style={{ backgroundColor: bgColor }}
+      style={{ 
+        background: useGradientBg 
+          ? 'linear-gradient(135deg, #f1f5f9 0%, #e2e8f0 50%, #cbd5e1 100%)'
+          : bgColor 
+      }}
     >
       <canvas ref={canvasRef} className="hidden" />
       {resolved.startsWith('__local_image:') ? (
@@ -135,7 +146,6 @@ export function SmartBgImage({
           alt={alt ?? ''}
           className={`max-w-full max-h-full object-contain transition-transform duration-300 ${imgClassName}`}
           onLoad={handleImageLoad}
-          crossOrigin="anonymous"
         />
       )}
     </div>
