@@ -13,14 +13,14 @@ interface SmartBgImageProps {
 
 /**
  * 智能背景图片组件
- * - 从 URL query 参数 (?bg=rgb(...)) 读取边缘颜色作为背景
+ * - 用图片本身做模糊 + 暗化背景（毛玻璃效果）
  * - 图片居中，保持原比例
- * - 无颜色参数时使用默认灰色
+ * - 无图片时显示首字母占位
  *
  * src 类型处理：
  * - __local_image:<id>  → LocalImage 组件解析 IndexedDB
- * - data: / blob:        → 直接原样使用（无 bg 参数）
- * - http: / https:        → 解析 ?bg=rgb(...) 取背景色，pathname 作 src
+ * - data: / blob:        → 直接原样使用
+ * - http: / https:        → 解析 ?bg=rgb(...) 取边缘颜色（兼容旧参数），背景仍用模糊
  * - 其他（相对路径等）  → 直接原样使用
  */
 export function SmartBgImage({
@@ -30,77 +30,105 @@ export function SmartBgImage({
   aspectRatio = 'aspect-video',
   imgClassName = '',
 }: SmartBgImageProps) {
-  const [bgColor, setBgColor] = useState<string>('#f1f5f9');
+  const [bgColor, setBgColor] = useState<string>('#1e293b'); // 深色默认，避免白边
   const [displaySrc, setDisplaySrc] = useState<string>('');
+  const [isLoaded, setIsLoaded] = useState(false);
 
   useEffect(() => {
+    setIsLoaded(false);
     if (!src) {
       setDisplaySrc('');
-      setBgColor('#f1f5f9');
+      setBgColor('#1e293b');
       return;
     }
 
     // __local_image:<id> → LocalImage 解析 IndexedDB
     if (src.startsWith('__local_image:')) {
       setDisplaySrc(src);
-      setBgColor('#f1f5f9');
+      setBgColor('#1e293b');
       return;
     }
 
-    // data: / blob: → 原样保留，不解析 URL（new URL() 会把 origin 变成 "null"）
+    // data: / blob: → 原样保留
     if (src.startsWith('data:') || src.startsWith('blob:')) {
       setDisplaySrc(src);
-      setBgColor('#f1f5f9');
+      setBgColor('#1e293b');
       return;
     }
 
-    // http: / https: → 正常解析 ?bg= 参数
+    // http: / https: → 解析 ?bg= 参数（兼容旧格式）
     if (src.startsWith('http:') || src.startsWith('https:')) {
       try {
         const url = new URL(src);
         const bg = url.searchParams.get('bg');
-        setBgColor(bg ? decodeURIComponent(bg) : '#f1f5f9');
+        setBgColor(bg ? decodeURIComponent(bg) : '#1e293b');
         setDisplaySrc(url.origin + url.pathname);
       } catch {
-        // URL 解析失败则原样保留
         setDisplaySrc(src);
-        setBgColor('#f1f5f9');
+        setBgColor('#1e293b');
       }
       return;
     }
 
-    // 其他（相对路径等）→ 原样使用
+    // 其他 → 原样使用
     setDisplaySrc(src);
-    setBgColor('#f1f5f9');
+    setBgColor('#1e293b');
   }, [src]);
 
-  // displaySrc 为空时不渲染任何 <img>
-  if (!displaySrc) {
-    return (
-      <div className={`${aspectRatio} bg-slate-100 flex items-center justify-center ${className}`}>
-        <span className="text-slate-400 text-4xl font-bold">{alt?.[0] ?? '?'}</span>
-      </div>
-    );
-  }
+  const showBg = Boolean(displaySrc);
 
   return (
     <div
-      className={`${aspectRatio} overflow-hidden flex items-center justify-center transition-colors duration-500 ${className}`}
-      style={{ backgroundColor: bgColor }}
+      className={`relative ${aspectRatio} overflow-hidden ${className}`}
     >
-      {displaySrc.startsWith('__local_image:') ? (
-        <LocalImage
-          src={displaySrc}
-          alt={alt ?? ''}
-          className={`max-w-full max-h-full object-contain transition-transform duration-300 ${imgClassName}`}
-        />
-      ) : (
-        <img
-          src={displaySrc}
-          alt={alt ?? ''}
-          className={`max-w-full max-h-full object-contain transition-transform duration-300 ${imgClassName}`}
-        />
+      {/* 毛玻璃模糊背景 */}
+      {showBg && (
+        <div
+          className="absolute inset-0 z-0"
+          style={{
+            backgroundColor: bgColor,
+          }}
+        >
+          {displaySrc.startsWith('__local_image:') ? (
+            <LocalImage
+              src={displaySrc}
+              alt=""
+              className="w-full h-full object-cover blur-xl scale-110 opacity-60"
+            />
+          ) : (
+            <img
+              src={displaySrc}
+              alt=""
+              className="w-full h-full object-cover blur-xl scale-110 opacity-60"
+              onLoad={() => setIsLoaded(true)}
+            />
+          )}
+        </div>
       )}
+
+      {/* 主图：居中、保持比例 */}
+      <div className="relative z-10 w-full h-full flex items-center justify-center">
+        {showBg ? (
+          displaySrc.startsWith('__local_image:') ? (
+            <LocalImage
+              src={displaySrc}
+              alt={alt ?? ''}
+              className={`max-w-full max-h-full object-contain ${imgClassName}`}
+            />
+          ) : (
+            <img
+              src={displaySrc}
+              alt={alt ?? ''}
+              className={`max-w-full max-h-full object-contain ${imgClassName}`}
+            />
+          )
+        ) : (
+          /* 无图片占位 */
+          <span className="text-slate-400 text-4xl font-bold select-none">
+            {alt?.[0] ?? '?'}
+          </span>
+        )}
+      </div>
     </div>
   );
 }
