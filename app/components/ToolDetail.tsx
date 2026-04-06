@@ -155,11 +155,11 @@ export default function ToolDetail({ toolId }: { toolId: string }) {
         <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
           {/* 封面图 */}
           {tool.imageUrl ? (
-            <div className="aspect-video bg-slate-100 overflow-hidden cursor-zoom-in" onClick={() => openLightbox(tool.imageUrl!)}>
+            <div className="aspect-video bg-slate-100 overflow-hidden flex items-center justify-center cursor-zoom-in" onClick={() => openLightbox(tool.imageUrl!)}>
               <img
                 src={tool.imageUrl}
                 alt={tool.name}
-                className="w-full h-full object-cover hover:scale-105 transition-transform duration-300"
+                className="max-w-full max-h-full object-contain hover:scale-105 transition-transform duration-300"
               />
             </div>
           ) : (

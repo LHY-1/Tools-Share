@@ -204,11 +204,11 @@ export default function HomePage() {
               <Link key={tool.id} href={`/tools/${tool.id}`}>
                 <div className="group bg-white rounded-xl border border-slate-200 hover:border-slate-300 hover:shadow-md transition-all overflow-hidden cursor-pointer h-full flex flex-col">
                   {tool.imageUrl ? (
-                    <div className="aspect-video bg-slate-100 overflow-hidden">
+                    <div className="aspect-video bg-slate-100 overflow-hidden flex items-center justify-center">
                       <LocalImage
                         src={tool.imageUrl}
                         alt={tool.name}
-                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                        className="max-w-full max-h-full object-contain group-hover:scale-105 transition-transform duration-300"
                       />
                     </div>
                   ) : (
